@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { UiResponse } from '@devvit/web/shared';
 import { context } from '@devvit/web/server';
-import { createPost } from '../core/post';
+import { createPost } from '../core/post.ts';
 
 export const menu = new Hono();
 
@@ -24,19 +24,4 @@ menu.post('/post-create', async (c) => {
       400
     );
   }
-});
-
-menu.post('/example-form', async (c) => {
-  return c.json<UiResponse>(
-    {
-      showForm: {
-        name: 'exampleForm',
-        form: {
-          title: 'Example form',
-          fields: [{ name: 'message', label: 'Message', type: 'string' }],
-        },
-      },
-    },
-    200
-  );
 });

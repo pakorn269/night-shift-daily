@@ -1,93 +1,132 @@
 import { Hono } from 'hono';
-import { context, redis, reddit } from '@devvit/web/server';
+import { context, reddit } from '@devvit/web/server';
+import { toPublicCase } from '../../shared/cases.ts';
+import { evaluateSubmission, selectDailyCase } from '../../shared/engine.ts';
+import { isRecord } from '../../shared/guards.ts';
 import type {
-  DecrementResponse,
-  IncrementResponse,
-  InitResponse,
-} from '../../shared/api';
+  ApiErrorResponse,
+  DailyCaseResponse,
+  EvaluateResponse,
+} from '../../shared/types.ts';
 
-type ErrorResponse = {
-  status: 'error';
-  message: string;
+export type SessionContext = {
+  readonly postId: string | null;
+  readonly username: string;
 };
 
-export const api = new Hono();
+export type ApiDeps = {
+  readonly getNow: () => Date;
+  readonly getSessionContext: () => Promise<SessionContext>;
+};
 
-api.get('/init', async (c) => {
-  const { postId } = context;
-
-  if (!postId) {
-    console.error('API Init Error: postId not found in devvit context');
-    return c.json<ErrorResponse>(
-      {
-        status: 'error',
-        message: 'postId is required but missing from context',
-      },
-      400
-    );
-  }
+const resolveDefaultSessionContext = async (): Promise<SessionContext> => {
+  const postId = context.postId ?? null;
+  let username = 'analyst';
 
   try {
-    const [count, username] = await Promise.all([
-      redis.get('count'),
-      reddit.getCurrentUsername(),
-    ]);
-
-    return c.json<InitResponse>({
-      type: 'init',
-      postId: postId,
-      count: count ? parseInt(count) : 0,
-      username: username ?? 'anonymous',
-    });
-  } catch (error) {
-    console.error(`API Init Error for post ${postId}:`, error);
-    let errorMessage = 'Unknown error during initialization';
-    if (error instanceof Error) {
-      errorMessage = `Initialization failed: ${error.message}`;
+    const currentUser = await reddit.getCurrentUsername();
+    if (typeof currentUser === 'string' && currentUser.trim().length > 0) {
+      username = currentUser.trim();
     }
-    return c.json<ErrorResponse>(
-      { status: 'error', message: errorMessage },
-      400
-    );
-  }
-});
-
-api.post('/increment', async (c) => {
-  const { postId } = context;
-  if (!postId) {
-    return c.json<ErrorResponse>(
-      {
-        status: 'error',
-        message: 'postId is required',
-      },
-      400
-    );
+  } catch (error) {
+    console.warn('Unable to resolve Reddit username, using fallback:', error);
   }
 
-  const count = await redis.incrBy('count', 1);
-  return c.json<IncrementResponse>({
-    count,
-    postId,
-    type: 'increment',
+  return { postId, username };
+};
+
+export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
+  const getNow = deps?.getNow ?? (() => new Date());
+  const getSessionContext =
+    deps?.getSessionContext ?? resolveDefaultSessionContext;
+
+  const router = new Hono();
+
+  router.get('/daily', async (c) => {
+    try {
+      const [selection, session] = await Promise.all([
+        Promise.resolve(selectDailyCase(getNow())),
+        getSessionContext(),
+      ]);
+
+      return c.json<DailyCaseResponse>(
+        {
+          type: 'daily',
+          utcDate: selection.utcDate,
+          shiftNumber: selection.shiftNumber,
+          totalCases: selection.totalCases,
+          nextRolloverUtc: selection.nextRolloverUtc,
+          username: session.username,
+          postId: session.postId,
+          incident: toPublicCase(selection.authoredCase),
+        },
+        200
+      );
+    } catch (error) {
+      console.error('API /daily failed:', error);
+      return c.json<ApiErrorResponse>(
+        {
+          status: 'error',
+          code: 'INTERNAL_ERROR',
+          message: 'Unable to load the daily shift incident.',
+        },
+        500
+      );
+    }
   });
-});
 
-api.post('/decrement', async (c) => {
-  const { postId } = context;
-  if (!postId) {
-    return c.json<ErrorResponse>(
+  router.post('/evaluate', async (c) => {
+    let rawBody: unknown;
+    try {
+      rawBody = await c.req.json();
+    } catch {
+      return c.json<ApiErrorResponse>(
+        {
+          status: 'error',
+          code: 'INVALID_PAYLOAD',
+          message: 'Request body must be valid JSON.',
+        },
+        400
+      );
+    }
+
+    if (!isRecord(rawBody)) {
+      return c.json<ApiErrorResponse>(
+        {
+          status: 'error',
+          code: 'INVALID_PAYLOAD',
+          message: 'Request payload must be a JSON object.',
+        },
+        400
+      );
+    }
+
+    const outcome = evaluateSubmission(
       {
-        status: 'error',
-        message: 'postId is required',
+        caseId: rawBody['caseId'],
+        evidenceId: rawBody['evidenceId'],
+        actionId: rawBody['actionId'],
+        startedUtcDate: rawBody['startedUtcDate'],
       },
-      400
+      getNow()
     );
-  }
 
-  const count = await redis.incrBy('count', -1);
-  return c.json<DecrementResponse>({
-    count,
-    postId,
-    type: 'decrement',
+    if (!outcome.ok) {
+      const status = outcome.code === 'UNKNOWN_CASE' ? 404 : 400;
+      return c.json<ApiErrorResponse>(
+        {
+          status: 'error',
+          code: outcome.code,
+          message: outcome.message,
+        },
+        status
+      );
+    }
+
+    return c.json<EvaluateResponse>(outcome.result, 200);
   });
-});
+
+  return router;
+};
+
+export const api = createApiRouter();

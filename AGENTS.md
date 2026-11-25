@@ -3,21 +3,28 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 ## Tech Stack
 
 - **Frontend**: React 19, Tailwind CSS 4, Vite
-- **Backend**: Node.js v22 serverless environment (Devvit), Hono, TRPC
-- **Communication**: tRPC v11 for end-to-end type safety
+- **Backend**: Node.js serverless environment (Devvit), Hono REST API
+- **Communication**: Typed JSON REST endpoints (`/api/daily`, `/api/evaluate`) backed by shared TypeScript contracts and runtime type guards in `/src/shared`
 
 ## Layout & Architecture
 
 - `/src/server`: **Backend Code**. This runs in a secure, serverless environment.
-  - `trpc.ts`: Defines the API router and procedures.
-  - `index.ts`: Main server entry point (Hono app).
-  - Access `redis`, `reddit`, and `context` here via `@devvit/web/server`.
+  - `index.ts`: Main server entry point (Hono app mounting `/api` and `/internal`).
+  - `routes/api.ts`: Hono REST routes (`GET /api/daily`, `POST /api/evaluate`). Currently stateless (no Redis) with deterministic UTC date rotation and unlimited retries.
+  - `routes/menu.ts` and `routes/triggers.ts`: Moderator post creation and install trigger handlers.
+  - Access `reddit` and `context` here via `@devvit/web/server`.
 - `/src/client`: **Frontend Code**. This is executed inside of an iFrame on reddit.com
-  - To add an entrypoint, create a HTML file and add to the mapping inside of `devvit.json`
+  - To add an entrypoint, create an HTML file and add to the mapping inside of `devvit.json`
   - Entrypoints:
     - `game.html`: The main React entry point (Expanded View).
     - `splash.html`: The initial React entry point (Inline View). This will be shown in the reddit.com feed. Please keep it fast and keep heavy dependencies inside of `game.html`
-- `/src/shared`: **Shared Code**. Code to share between the client and server
+  - Modules:
+    - `canvas/sceneRenderer.ts`: 60 FPS `360×210` retro-pixel HTML5 2D `<canvas>` CCTV renderer with clickable hotspots and win/breach payoff animations.
+    - `audio/sfx.ts`: Procedural Web Audio API CRT sound cues gated by `[SFX ON/OFF]`.
+    - `components/`: `SplashView.tsx`, `GameView.tsx`, `SecurityMonitorCanvas.tsx`, `ClueDeck.tsx`, `ActionSelector.tsx`, `VerdictPanel.tsx`, and `LanguageSwitcher.tsx`.
+    - `hooks/`: `useDailyShift.ts` (shift state, stopwatch, distractor clearing, rollover check) and `useLanguage.ts` (`EN | ไทย` persistence).
+- `/src/shared`: **Shared Code**. Shared contracts (`types.ts`), runtime guards (`guards.ts`), authored cases (`cases.ts`), pure deterministic engine (`engine.ts`), and English/Thai localization (`i18n.ts`, `DEFAULT_LANGUAGE = 'en'`).
+- `/tools`: **Build & Local Preview**. `tsconfig.base.json` (`rewriteRelativeImportExtensions: true` for Node native TypeScript execution) and `local-preview.ts` (standalone localhost Hono + static `dist/client` preview server).
 
 ## Frontend
 
@@ -34,9 +41,11 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 
 ## Commands
 
-- `npm run type-check`: Check typescript types
-- `npm run lint`: Check the linter
-- `npm run test -- my-file-name`: Run tests isolated to a file
+- `npm run test:types`: Check TypeScript types (`tsc --build`)
+- `npm run lint`: Run ESLint (`eslint "src/**/*.{ts,tsx}"`)
+- `npm run test:unit`: Run Node native unit and API tests (`node --experimental-strip-types --no-warnings=ExperimentalWarning --test "src/**/*.test.ts"`)
+- `npm run build`: Production Vite + Devvit bundle build
+- `npm run preview:local`: Start standalone localhost preview at `http://127.0.0.1:4173` (supports `?date=YYYY-MM-DD` and `?lang=th`)
 
 ## Code Style
 
@@ -48,5 +57,7 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 
 - You may find code that references blocks or `@devvit/public-api` while building a feature. Do NOT use this code as this project is configured to use Devvit web only.
 - Whenever you add an endpoint for a new menu item action, ensure that you've added the corresponding mapping to `devvit.json` so that it is properly registered
+- Project runbook skill: `.agents/skills/night-shift-daily-devvit/SKILL.md`
+- Do NOT run `npm run launch` or `devvit publish` without explicit owner approval; restore `package-lock.json` if `devvit upload` strips optional platform entries when `package.json` dependencies did not change.
 
 Docs: https://developers.reddit.com/docs/llms.txt.
