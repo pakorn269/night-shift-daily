@@ -1,4 +1,4 @@
-import type { Language } from '../../shared/i18n.ts';
+import type { Language } from '../../shared/uiStrings.ts';
 
 type LanguageSwitcherProps = {
   readonly language: Language;

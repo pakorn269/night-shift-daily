@@ -1,9 +1,18 @@
-import { DAILY_CASES, EPOCH_UTC_DATE, getCaseById } from './cases.ts';
+import { computeRankCode } from '../../shared/shareFormat.ts';
 import type {
   ApiErrorCode,
   AuthoredCase,
-  EvaluateResponse,
-} from './types.ts';
+  EvaluationCopy,
+  LocalizedPublicCases,
+  RankCode,
+} from '../../shared/types.ts';
+import {
+  DAILY_CASES,
+  EPOCH_UTC_DATE,
+  getCaseById,
+  toPublicCase,
+} from '../data/cases.ts';
+import { buildThaiEvaluationCopy, localizeCaseTh } from '../data/casesTh.ts';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -47,6 +56,11 @@ const parseUtcDateMs = (utcDate: string): number => {
   return Date.UTC(year, month - 1, day, 0, 0, 0, 0);
 };
 
+export const getPreviousUtcDate = (utcDate: string): string => {
+  const currentMs = parseUtcDateMs(utcDate);
+  return formatUtcDate(new Date(currentMs - MS_PER_DAY));
+};
+
 export const getUtcDayOffset = (
   utcDate: string,
   epochUtcDate: string = EPOCH_UTC_DATE
@@ -54,6 +68,15 @@ export const getUtcDayOffset = (
   const targetMs = parseUtcDateMs(utcDate);
   const epochMs = parseUtcDateMs(epochUtcDate);
   return Math.round((targetMs - epochMs) / MS_PER_DAY);
+};
+
+export const getShiftNumberForUtcDate = (
+  utcDate: string,
+  casesLength: number = DAILY_CASES.length
+): number => {
+  const offset = getUtcDayOffset(utcDate);
+  const index = ((offset % casesLength) + casesLength) % casesLength;
+  return offset >= 0 ? offset + 1 : index + 1;
 };
 
 export type DailySelection = {
@@ -92,20 +115,69 @@ export const selectDailyCase = (
   };
 };
 
+export const toLocalizedPublicCases = (
+  authored: AuthoredCase
+): LocalizedPublicCases => {
+  const en = toPublicCase(authored);
+  const th = localizeCaseTh(en);
+  return { en, th };
+};
+
 export type EvaluationInput = {
   readonly caseId: unknown;
   readonly evidenceId: unknown;
   readonly actionId: unknown;
   readonly startedUtcDate?: unknown;
+  readonly elapsedSeconds?: unknown;
+  readonly clearedCount?: unknown;
+  readonly attemptNumber?: unknown;
+};
+
+export type CoreEvaluationResult = {
+  readonly caseId: string;
+  readonly incidentCode: string;
+  readonly shiftNumber: number;
+  readonly correct: boolean;
+  readonly evidenceCorrect: boolean;
+  readonly actionCorrect: boolean;
+  readonly rankCode: RankCode;
+  readonly elapsedSeconds: number;
+  readonly clearedCount: number;
+  readonly attemptNumber: number;
+  readonly selectedEvidenceId: string;
+  readonly selectedEvidenceSource: string;
+  readonly selectedActionId: string;
+  readonly correctEvidenceId: string;
+  readonly correctActionId: string;
+  readonly correctEvidenceSource: string;
+  readonly correctEvidenceTimestamp: string;
+  readonly localized: {
+    readonly en: EvaluationCopy;
+    readonly th: EvaluationCopy;
+  };
+  readonly startedUtcDate: string;
+  readonly currentUtcDate: string;
+  readonly newShiftAvailable: boolean;
 };
 
 export type EvaluationOutcome =
-  | { readonly ok: true; readonly result: EvaluateResponse }
+  | { readonly ok: true; readonly result: CoreEvaluationResult }
   | {
       readonly ok: false;
       readonly code: ApiErrorCode;
       readonly message: string;
     };
+
+const clampNonNegativeInt = (
+  value: unknown,
+  fallback: number,
+  max: number
+): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(max, Math.floor(value)));
+};
 
 export const evaluateSubmission = (
   input: EvaluationInput,
@@ -183,9 +255,26 @@ export const evaluateSubmission = (
     };
   }
 
-  const evidenceCorrect = selectedEvidenceId === authoredCase.solution.evidenceId;
+  const evidenceCorrect =
+    selectedEvidenceId === authoredCase.solution.evidenceId;
   const actionCorrect = selectedActionId === authoredCase.solution.actionId;
   const correct = evidenceCorrect && actionCorrect;
+
+  const elapsedSeconds = clampNonNegativeInt(input.elapsedSeconds, 0, 86_400);
+  const clearedCount = clampNonNegativeInt(
+    input.clearedCount,
+    0,
+    Math.max(0, authoredCase.evidence.length - 1)
+  );
+  const attemptNumber = Math.max(
+    1,
+    clampNonNegativeInt(input.attemptNumber, 1, 999)
+  );
+  const rankCode = computeRankCode(
+    evidenceCorrect,
+    actionCorrect,
+    elapsedSeconds
+  );
 
   const wrongActionNote =
     authoredCase.solution.wrongActionFeedback[selectedActionId];
@@ -194,32 +283,60 @@ export const evaluateSubmission = (
     : (wrongActionNote ??
       `You chose "${selectedAction.label}", which does not stop the active anomaly.`);
 
+  const enCopy: EvaluationCopy = {
+    correctEvidenceShortLabel: correctEvidence.shortLabel,
+    selectedEvidenceShortLabel: selectedEvidence.shortLabel,
+    correctActionLabel: correctAction.label,
+    selectedActionLabel: selectedAction.label,
+    evidenceExplanation: authoredCase.solution.evidenceExplanation,
+    actionExplanation: authoredCase.solution.actionExplanation,
+    selectedActionNote,
+  };
+
+  const thCopy = buildThaiEvaluationCopy(
+    authoredCase,
+    selectedEvidenceId,
+    selectedActionId,
+    actionCorrect,
+    enCopy
+  );
+
   const currentUtcDate = formatUtcDate(now);
-  const startedUtcDate =
+  const rawStarted =
     typeof input.startedUtcDate === 'string'
       ? input.startedUtcDate.trim()
       : '';
-  const newShiftAvailable =
-    startedUtcDate.length > 0 && startedUtcDate !== currentUtcDate;
+  const startedUtcDate = /^\d{4}-\d{2}-\d{2}$/.test(rawStarted)
+    ? rawStarted
+    : currentUtcDate;
+  const newShiftAvailable = startedUtcDate !== currentUtcDate;
+  const shiftNumber = getShiftNumberForUtcDate(startedUtcDate, cases.length);
 
   return {
     ok: true,
     result: {
-      type: 'evaluation',
       caseId: authoredCase.id,
+      incidentCode: authoredCase.incidentCode,
+      shiftNumber,
       correct,
       evidenceCorrect,
       actionCorrect,
+      rankCode,
+      elapsedSeconds,
+      clearedCount,
+      attemptNumber,
       selectedEvidenceId,
+      selectedEvidenceSource: selectedEvidence.source,
       selectedActionId,
       correctEvidenceId: authoredCase.solution.evidenceId,
       correctActionId: authoredCase.solution.actionId,
       correctEvidenceSource: correctEvidence.source,
       correctEvidenceTimestamp: correctEvidence.timestamp,
-      correctActionLabel: correctAction.label,
-      evidenceExplanation: authoredCase.solution.evidenceExplanation,
-      actionExplanation: authoredCase.solution.actionExplanation,
-      selectedActionNote,
+      localized: {
+        en: enCopy,
+        th: thCopy,
+      },
+      startedUtcDate,
       currentUtcDate,
       newShiftAvailable,
     },

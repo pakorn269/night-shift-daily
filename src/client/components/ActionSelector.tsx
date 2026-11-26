@@ -1,10 +1,9 @@
-import type { UiStrings } from '../../shared/i18n.ts';
-import type { ContainmentAction, EvaluateResponse } from '../../shared/types.ts';
+import type { ContainmentAction } from '../../shared/types.ts';
+import type { UiStrings } from '../../shared/uiStrings.ts';
 
 type ActionSelectorProps = {
   readonly actions: readonly ContainmentAction[];
   readonly selectedActionId: string | null;
-  readonly evaluation: EvaluateResponse | null;
   readonly hasFlaggedEvidence: boolean;
   readonly ui: UiStrings;
   readonly disabled: boolean;
@@ -16,15 +15,14 @@ const BREAKER_CODES = ['A', 'B', 'C'];
 export const ActionSelector = ({
   actions,
   selectedActionId,
-  evaluation,
   hasFlaggedEvidence,
   ui,
   disabled,
   onSelect,
 }: ActionSelectorProps) => {
   return (
-    <section aria-labelledby="actions-heading" className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <section aria-labelledby="actions-heading" className="space-y-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
         <h2
           id="actions-heading"
           className="font-mono text-[11px] font-bold tracking-wider text-slate-100 uppercase"
@@ -55,51 +53,17 @@ export const ActionSelector = ({
       >
         {actions.map((action, index) => {
           const isSelected = selectedActionId === action.id;
-          const isCorrectTarget = evaluation?.correctActionId === action.id;
-          const isWrongSelection =
-            evaluation !== null && isSelected && !isCorrectTarget;
 
-          let shellClasses = 'hd-switch-raised';
-          let badgeText = ui.armTag;
-          let badgeClasses = 'border-slate-700 bg-slate-900/90 text-slate-400';
-          let ledClasses = 'border-slate-600 bg-slate-900 text-slate-400';
-
-          if (evaluation === null) {
-            if (isSelected) {
-              shellClasses = 'hd-switch-pressed';
-              badgeText = ui.armedTag;
-              badgeClasses =
-                'border-amber-400 bg-amber-400 text-slate-950 font-bold';
-              ledClasses =
-                'border-amber-300 bg-amber-400 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.65)]';
-            }
-          } else if (isSelected && isCorrectTarget) {
-            shellClasses =
-              'border border-emerald-400 bg-emerald-950/40 ring-1 ring-emerald-400/60';
-            badgeText = ui.armedOkTag;
-            badgeClasses =
-              'border-emerald-400 bg-emerald-400 text-slate-950 font-bold';
-            ledClasses = 'border-emerald-300 bg-emerald-400 text-slate-950';
-          } else if (isCorrectTarget) {
-            shellClasses =
-              'border border-emerald-400 bg-emerald-950/25 ring-1 ring-emerald-400/50';
-            badgeText = ui.requiredTag;
-            badgeClasses =
-              'border-emerald-400 bg-emerald-950 text-emerald-200 font-bold';
-            ledClasses = 'border-emerald-400 bg-emerald-950 text-emerald-300';
-          } else if (isWrongSelection) {
-            shellClasses =
-              'border border-rose-400 bg-rose-950/40 ring-1 ring-rose-400/60';
-            badgeText = ui.missTag;
-            badgeClasses =
-              'border-rose-400 bg-rose-400 text-slate-950 font-bold';
-            ledClasses = 'border-rose-300 bg-rose-400 text-slate-950';
-          } else {
-            shellClasses =
-              'border border-slate-800 bg-[#0a0f16] opacity-70';
-            badgeText = ui.optionTag;
-            badgeClasses = 'border-slate-800 bg-slate-900 text-slate-500';
-          }
+          const shellClasses = isSelected
+            ? 'hd-switch-pressed'
+            : 'hd-switch-raised';
+          const badgeText = isSelected ? ui.armedTag : ui.armTag;
+          const badgeClasses = isSelected
+            ? 'border-amber-400 bg-amber-400 text-slate-950 font-bold'
+            : 'border-slate-700 bg-slate-900/90 text-slate-400';
+          const ledClasses = isSelected
+            ? 'border-amber-300 bg-amber-400 text-slate-950 shadow-[0_0_8px_rgba(245,158,11,0.65)]'
+            : 'border-slate-600 bg-slate-900 text-slate-400';
 
           const breakerCode = BREAKER_CODES[index] ?? String(index + 1);
 
@@ -111,12 +75,12 @@ export const ActionSelector = ({
               aria-checked={isSelected}
               disabled={disabled}
               onClick={() => onSelect(action.id)}
-              className={`hd-cut-sm w-full min-h-[44px] px-3 py-2 text-left ${shellClasses} ${
+              className={`hd-cut-sm w-full min-h-[40px] px-2.5 py-1.5 text-left ${shellClasses} ${
                 disabled ? 'cursor-default' : 'cursor-pointer'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
                   <span
                     aria-hidden="true"
                     className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border font-mono text-[10px] font-bold ${ledClasses}`}
@@ -134,7 +98,7 @@ export const ActionSelector = ({
                 </span>
               </div>
               {isSelected ? (
-                <p className="mt-1.5 pl-7 text-[11px] leading-relaxed text-amber-100/90">
+                <p className="mt-1 pl-7 text-[11px] leading-snug text-amber-100/90">
                   {action.description}
                 </p>
               ) : null}

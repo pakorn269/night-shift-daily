@@ -1,72 +1,86 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { DAILY_CASES, EPOCH_UTC_DATE, toPublicCase } from '../shared/cases.ts';
+import { isSceneTemplateId } from '../shared/guards.ts';
+import {
+  computeRankCode,
+  formatShiftShareText,
+} from '../shared/shareFormat.ts';
+import { getUiStrings } from '../shared/uiStrings.ts';
 import {
   evaluateSubmission,
   formatUtcDate,
   getNextUtcRolloverIso,
+  getPreviousUtcDate,
   selectDailyCase,
-} from '../shared/engine.ts';
-import {
-  getUiStrings,
-  localizeCase,
-  localizeEvaluation,
-} from '../shared/i18n.ts';
+  toLocalizedPublicCases,
+} from './core/engine.ts';
+import { DAILY_CASES, EPOCH_UTC_DATE, toPublicCase } from './data/cases.ts';
 
-void describe('Night Shift Daily catalog', () => {
-  void it('contains 3 distinct authored cases with valid solution references', () => {
-    assert.equal(DAILY_CASES.length, 3);
+void describe('Night Shift Daily 9-case catalog', () => {
+  void it('contains 9 distinct authored cases with balanced breaker positions and valid references', () => {
+    assert.equal(DAILY_CASES.length, 9);
 
     const caseIds = new Set(DAILY_CASES.map((item) => item.id));
     const incidentCodes = new Set(DAILY_CASES.map((item) => item.incidentCode));
-    assert.equal(caseIds.size, 3);
-    assert.equal(incidentCodes.size, 3);
+    assert.equal(caseIds.size, 9);
+    assert.equal(incidentCodes.size, 9);
+
+    const correctBreakerSlots = [0, 0, 0];
+    const correctEvidenceSlots = new Set<number>();
 
     for (const item of DAILY_CASES) {
       const evidenceIds = new Set(item.evidence.map((row) => row.id));
       const nodeIds = new Set(item.evidence.map((row) => row.nodeId));
       const actionIds = new Set(item.actions.map((act) => act.id));
+
+      assert.ok(isSceneTemplateId(item.sceneTemplate));
+      assert.ok(item.sceneCameraId.trim().length > 0);
       assert.ok(item.teaser.trim().length > 0);
       assert.ok(item.shortRule.trim().length > 0);
-      assert.equal(nodeIds.size, item.evidence.length);
+      assert.equal(item.evidence.length, 5);
+      assert.equal(nodeIds.size, 5);
+      assert.equal(item.actions.length, 3);
+
       for (const row of item.evidence) {
         assert.ok(row.shortLabel.trim().length > 0);
         assert.ok(row.shortClue.trim().length > 0);
         assert.ok(row.whisper.trim().length > 0);
       }
+
       assert.ok(evidenceIds.has(item.solution.evidenceId));
       assert.ok(actionIds.has(item.solution.actionId));
-      assert.equal(item.actions.length, 3);
-      assert.ok(item.evidence.length >= 4);
+
+      const evIndex = item.evidence.findIndex(
+        (row) => row.id === item.solution.evidenceId
+      );
+      const actIndex = item.actions.findIndex(
+        (act) => act.id === item.solution.actionId
+      );
+      assert.ok(evIndex >= 0 && evIndex < 5);
+      assert.ok(actIndex >= 0 && actIndex < 3);
+
+      correctEvidenceSlots.add(evIndex);
+      const prevSlotCount = correctBreakerSlots[actIndex] ?? 0;
+      correctBreakerSlots[actIndex] = prevSlotCount + 1;
     }
+
+    // Balanced 3x A, 3x B, 3x C across 9 cases, and all 5 hotspot positions used
+    assert.deepEqual(correctBreakerSlots, [3, 3, 3]);
+    assert.equal(correctEvidenceSlots.size, 5);
   });
 
   void it('strips solution details when converting to PublicCase', () => {
-    const firstCase = DAILY_CASES[0];
-    assert.ok(firstCase);
-    const publicCase = toPublicCase(firstCase);
-    assert.equal('solution' in publicCase, false);
-    assert.equal(publicCase.id, firstCase.id);
-    assert.equal(publicCase.teaser, firstCase.teaser);
-    assert.equal(publicCase.shortRule, firstCase.shortRule);
-    assert.equal(publicCase.evidence.length, firstCase.evidence.length);
-    assert.equal(publicCase.evidence[0]?.nodeId, firstCase.evidence[0]?.nodeId);
-    assert.equal(
-      publicCase.evidence[0]?.shortLabel,
-      firstCase.evidence[0]?.shortLabel
-    );
-    assert.equal(
-      publicCase.evidence[0]?.shortClue,
-      firstCase.evidence[0]?.shortClue
-    );
-    assert.equal(
-      publicCase.evidence[0]?.whisper,
-      firstCase.evidence[0]?.whisper
-    );
+    for (const authored of DAILY_CASES) {
+      const publicCase = toPublicCase(authored);
+      assert.equal('solution' in publicCase, false);
+      assert.equal(publicCase.id, authored.id);
+      assert.equal(publicCase.sceneTemplate, authored.sceneTemplate);
+      assert.equal(publicCase.evidence.length, authored.evidence.length);
+    }
   });
 });
 
-void describe('Deterministic UTC case selection and 00:00 UTC rollover', () => {
+void describe('Deterministic 9-day UTC case selection and 00:00 UTC rollover', () => {
   void it('returns the same case across all timestamps within a single UTC day', () => {
     const morning = selectDailyCase(new Date('2026-11-25T00:00:00.000Z'));
     const noon = selectDailyCase(new Date('2026-11-25T12:34:56.000Z'));
@@ -80,29 +94,26 @@ void describe('Deterministic UTC case selection and 00:00 UTC rollover', () => {
     assert.equal(noon.authoredCase.id, 'case-01');
     assert.equal(lateNight.authoredCase.id, 'case-01');
     assert.equal(morning.shiftNumber, 1);
-    assert.equal(lateNight.shiftNumber, 1);
+    assert.equal(morning.totalCases, 9);
   });
 
-  void it('rotates deterministically through all 3 distinct cases across 3 UTC days and wraps on day 4', () => {
-    const day1 = selectDailyCase(new Date('2026-11-25T05:00:00.000Z'));
-    const day2 = selectDailyCase(new Date('2026-11-26T05:00:00.000Z'));
-    const day3 = selectDailyCase(new Date('2026-11-27T05:00:00.000Z'));
-    const day4 = selectDailyCase(new Date('2026-11-28T05:00:00.000Z'));
+  void it('rotates through all 9 distinct cases across 9 UTC days and wraps on day 10', () => {
+    const seen = new Set<string>();
+    const startMs = Date.UTC(2026, 10, 25, 6, 0, 0);
 
-    assert.equal(day1.authoredCase.id, 'case-01');
-    assert.equal(day1.shiftNumber, 1);
+    for (let day = 0; day < 9; day++) {
+      const sel = selectDailyCase(new Date(startMs + day * 86_400_000));
+      seen.add(sel.authoredCase.id);
+      assert.equal(sel.shiftNumber, day + 1);
+    }
+    assert.equal(seen.size, 9);
 
-    assert.equal(day2.authoredCase.id, 'case-02');
-    assert.equal(day2.shiftNumber, 2);
-
-    assert.equal(day3.authoredCase.id, 'case-03');
-    assert.equal(day3.shiftNumber, 3);
-
-    assert.equal(day4.authoredCase.id, 'case-01');
-    assert.equal(day4.shiftNumber, 4);
+    const day10 = selectDailyCase(new Date(startMs + 9 * 86_400_000));
+    assert.equal(day10.authoredCase.id, 'case-01');
+    assert.equal(day10.shiftNumber, 10);
   });
 
-  void it('switches cases right at the 00:00 UTC rollover boundary', () => {
+  void it('switches cases right at the 00:00 UTC rollover boundary and computes previous UTC date', () => {
     const beforeRollover = selectDailyCase(
       new Date('2026-11-25T23:59:59.999Z')
     );
@@ -117,18 +128,22 @@ void describe('Deterministic UTC case selection and 00:00 UTC rollover', () => {
       getNextUtcRolloverIso(new Date('2026-11-25T23:59:59.999Z')),
       '2026-11-26T00:00:00.000Z'
     );
+    assert.equal(getPreviousUtcDate('2026-12-01'), '2026-11-30');
   });
 
   void it('handles pre-epoch UTC dates cleanly without negative indexing errors', () => {
     const preEpoch = selectDailyCase(new Date('2026-11-24T18:00:00.000Z'));
-    assert.equal(formatUtcDate(new Date('2026-11-24T18:00:00.000Z')), '2026-11-24');
-    assert.equal(preEpoch.authoredCase.id, 'case-03');
-    assert.equal(preEpoch.shiftNumber, 3);
+    assert.equal(
+      formatUtcDate(new Date('2026-11-24T18:00:00.000Z')),
+      '2026-11-24'
+    );
+    assert.equal(preEpoch.authoredCase.id, 'case-09');
+    assert.equal(preEpoch.shiftNumber, 9);
   });
 });
 
-void describe('Submission evaluation and rollover stability', () => {
-  void it('evaluates all 3 authored cases accurately for correct outcomes', () => {
+void describe('Submission evaluation, rank calculation, and rollover stability', () => {
+  void it('evaluates all 9 authored cases accurately for correct outcomes in EN and TH', () => {
     for (const item of DAILY_CASES) {
       const outcome = evaluateSubmission(
         {
@@ -136,6 +151,9 @@ void describe('Submission evaluation and rollover stability', () => {
           evidenceId: item.solution.evidenceId,
           actionId: item.solution.actionId,
           startedUtcDate: '2026-11-25',
+          elapsedSeconds: 32,
+          clearedCount: 3,
+          attemptNumber: 1,
         },
         new Date('2026-11-25T03:00:00.000Z')
       );
@@ -143,89 +161,53 @@ void describe('Submission evaluation and rollover stability', () => {
       assert.equal(outcome.ok, true);
       if (outcome.ok) {
         assert.equal(outcome.result.correct, true);
+        assert.equal(outcome.result.rankCode, 'S');
         assert.equal(outcome.result.evidenceCorrect, true);
         assert.equal(outcome.result.actionCorrect, true);
         assert.equal(outcome.result.newShiftAvailable, false);
+        assert.notEqual(
+          outcome.result.localized.th.evidenceExplanation,
+          outcome.result.localized.en.evidenceExplanation
+        );
       }
     }
   });
 
-  void it('evaluates wrong evidence with right action as partial incorrect', () => {
-    const outcome = evaluateSubmission(
-      {
-        caseId: 'case-01',
-        evidenceId: 'ev-1a',
-        actionId: 'act-1a',
-      },
-      new Date('2026-11-25T03:00:00.000Z')
-    );
-
-    assert.equal(outcome.ok, true);
-    if (outcome.ok) {
-      assert.equal(outcome.result.correct, false);
-      assert.equal(outcome.result.evidenceCorrect, false);
-      assert.equal(outcome.result.actionCorrect, true);
-      assert.equal(outcome.result.correctEvidenceId, 'ev-1c');
-    }
+  void it('computes ranks S, A, B, C, and F accurately across elapsed time thresholds', () => {
+    assert.equal(computeRankCode(true, true, 30), 'S');
+    assert.equal(computeRankCode(true, true, 45), 'S');
+    assert.equal(computeRankCode(true, true, 46), 'A');
+    assert.equal(computeRankCode(true, true, 90), 'A');
+    assert.equal(computeRankCode(true, true, 91), 'B');
+    assert.equal(computeRankCode(true, false, 15), 'C');
+    assert.equal(computeRankCode(false, true, 15), 'C');
+    assert.equal(computeRankCode(false, false, 15), 'F');
   });
 
-  void it('evaluates right evidence with wrong action and returns specific action feedback', () => {
-    const outcome = evaluateSubmission(
+  void it('evaluates partial and wrong outcomes with tailored feedback and rollover stability', () => {
+    const partial = evaluateSubmission(
       {
         caseId: 'case-02',
         evidenceId: 'ev-2c',
         actionId: 'act-2b',
+        startedUtcDate: '2026-11-26',
+        elapsedSeconds: 50,
       },
-      new Date('2026-11-26T03:00:00.000Z')
+      new Date('2026-11-27T00:00:05.000Z')
     );
 
-    assert.equal(outcome.ok, true);
-    if (outcome.ok) {
-      assert.equal(outcome.result.correct, false);
-      assert.equal(outcome.result.evidenceCorrect, true);
-      assert.equal(outcome.result.actionCorrect, false);
-      assert.equal(outcome.result.correctActionId, 'act-2a');
-      assert.match(outcome.result.selectedActionNote, /184 days/);
-    }
-  });
-
-  void it('evaluates wrong evidence and wrong action as 0/2 incorrect', () => {
-    const outcome = evaluateSubmission(
-      {
-        caseId: 'case-03',
-        evidenceId: 'ev-3c',
-        actionId: 'act-3c',
-      },
-      new Date('2026-11-27T03:00:00.000Z')
-    );
-
-    assert.equal(outcome.ok, true);
-    if (outcome.ok) {
-      assert.equal(outcome.result.correct, false);
-      assert.equal(outcome.result.evidenceCorrect, false);
-      assert.equal(outcome.result.actionCorrect, false);
-      assert.equal(outcome.result.correctEvidenceId, 'ev-3d');
-      assert.equal(outcome.result.correctActionId, 'act-3a');
-    }
-  });
-
-  void it('keeps an in-progress attempt on its original case across 00:00 UTC rollover and flags newShiftAvailable', () => {
-    const outcome = evaluateSubmission(
-      {
-        caseId: 'case-01',
-        evidenceId: 'ev-1c',
-        actionId: 'act-1a',
-        startedUtcDate: '2026-11-25',
-      },
-      new Date('2026-11-26T00:00:05.000Z')
-    );
-
-    assert.equal(outcome.ok, true);
-    if (outcome.ok) {
-      assert.equal(outcome.result.caseId, 'case-01');
-      assert.equal(outcome.result.correct, true);
-      assert.equal(outcome.result.currentUtcDate, '2026-11-26');
-      assert.equal(outcome.result.newShiftAvailable, true);
+    assert.equal(partial.ok, true);
+    if (partial.ok) {
+      assert.equal(partial.result.correct, false);
+      assert.equal(partial.result.rankCode, 'C');
+      assert.equal(partial.result.evidenceCorrect, true);
+      assert.equal(partial.result.actionCorrect, false);
+      assert.equal(partial.result.newShiftAvailable, true);
+      assert.match(partial.result.localized.en.selectedActionNote, /184 days/);
+      assert.notEqual(
+        partial.result.localized.th.selectedActionNote,
+        partial.result.localized.en.selectedActionNote
+      );
     }
   });
 
@@ -282,76 +264,67 @@ void describe('Submission evaluation and rollover stability', () => {
   });
 });
 
-void describe('Thai localization (i18n)', () => {
-  void it('provides complete distinct UI strings for en and th', () => {
-    const en = getUiStrings('en');
-    const th = getUiStrings('th');
+void describe('Localization (EN & TH) and spoiler-free share formatting', () => {
+  void it('provides complete distinct UI strings and Thai translations across all 9 cases', () => {
+    const enUi = getUiStrings('en');
+    const thUi = getUiStrings('th');
+    assert.notEqual(enUi.splashCta, thUi.splashCta);
+    assert.notEqual(enUi.postCommentBtn, thUi.postCommentBtn);
 
-    assert.notEqual(en.splashCta, th.splashCta);
-    assert.notEqual(en.flagAnomalyBtn, th.flagAnomalyBtn);
-    assert.notEqual(en.replayShiftBtn, th.replayShiftBtn);
-    assert.ok(th.splashCta.length > 0);
-    assert.ok(th.executeContainment.length > 0);
-  });
-
-  void it('localizes all 3 authored cases into Thai with all evidence and actions covered', () => {
     for (const item of DAILY_CASES) {
-      const publicEn = toPublicCase(item);
-      const publicTh = localizeCase(publicEn, 'th');
+      const { en, th } = toLocalizedPublicCases(item);
+      assert.notEqual(th.title, en.title);
+      assert.notEqual(th.teaser, en.teaser);
+      assert.notEqual(th.shortRule, en.shortRule);
+      assert.equal(th.evidence.length, en.evidence.length);
+      assert.equal(th.actions.length, en.actions.length);
 
-      assert.notEqual(publicTh.title, publicEn.title);
-      assert.notEqual(publicTh.teaser, publicEn.teaser);
-      assert.notEqual(publicTh.shortRule, publicEn.shortRule);
-      assert.equal(publicTh.evidence.length, publicEn.evidence.length);
-      assert.equal(publicTh.actions.length, publicEn.actions.length);
-
-      for (const [idx, row] of publicTh.evidence.entries()) {
-        const enRow = publicEn.evidence[idx];
+      for (const [idx, row] of th.evidence.entries()) {
+        const enRow = en.evidence[idx];
         assert.ok(enRow);
-        assert.ok(row.shortLabel.trim().length > 0);
-        assert.ok(row.shortClue.trim().length > 0);
         assert.notEqual(row.shortClue, enRow.shortClue);
+        assert.ok(row.whisper.trim().length > 0);
       }
-
-      for (const [idx, act] of publicTh.actions.entries()) {
-        const enAct = publicEn.actions[idx];
+      for (const [idx, act] of th.actions.entries()) {
+        const enAct = en.actions[idx];
         assert.ok(enAct);
-        assert.ok(act.label.trim().length > 0);
         assert.notEqual(act.label, enAct.label);
-        assert.notEqual(act.description, enAct.description);
       }
     }
   });
 
-  void it('localizes evaluation debriefs in Thai for both winning and wrong-action outcomes', () => {
-    for (const item of DAILY_CASES) {
-      const winOutcome = evaluateSubmission({
-        caseId: item.id,
-        evidenceId: item.solution.evidenceId,
-        actionId: item.solution.actionId,
-      });
-      assert.equal(winOutcome.ok, true);
-      if (winOutcome.ok) {
-        const winTh = localizeEvaluation(winOutcome.result, 'th');
-        assert.notEqual(winTh.correctActionLabel, winOutcome.result.correctActionLabel);
-        assert.notEqual(winTh.evidenceExplanation, winOutcome.result.evidenceExplanation);
-        assert.notEqual(winTh.actionExplanation, winOutcome.result.actionExplanation);
-      }
+  void it('formats spoiler-free shift share cards in English and Thai', () => {
+    const enText = formatShiftShareText({
+      shiftNumber: 2,
+      incidentCode: 'INC-0412',
+      rankCode: 'S',
+      elapsedSeconds: 34,
+      evidenceCorrect: true,
+      actionCorrect: true,
+      clearedCount: 3,
+      streak: 4,
+      lang: 'en',
+    });
+    assert.match(enText, /SHIFT #002/);
+    assert.match(enText, /INC-0412/);
+    assert.match(enText, /00:34/);
+    assert.match(enText, /Streak: 4/);
+    assert.doesNotMatch(enText, /VLAN 88|10\.44\.8\.212/);
 
-      const wrongAction = item.actions.find(
-        (act) => act.id !== item.solution.actionId
-      );
-      assert.ok(wrongAction);
-      const failOutcome = evaluateSubmission({
-        caseId: item.id,
-        evidenceId: item.solution.evidenceId,
-        actionId: wrongAction.id,
-      });
-      assert.equal(failOutcome.ok, true);
-      if (failOutcome.ok) {
-        const failTh = localizeEvaluation(failOutcome.result, 'th');
-        assert.notEqual(failTh.selectedActionNote, failOutcome.result.selectedActionNote);
-      }
-    }
+    const thText = formatShiftShareText({
+      shiftNumber: 2,
+      incidentCode: 'INC-0412',
+      rankCode: 'C',
+      elapsedSeconds: 75,
+      evidenceCorrect: true,
+      actionCorrect: false,
+      clearedCount: 2,
+      streak: 1,
+      lang: 'th',
+    });
+    assert.match(thText, /กะ #002/);
+    assert.match(thText, /01:15/);
+    assert.match(thText, /🟩/);
+    assert.match(thText, /🟥/);
   });
 });

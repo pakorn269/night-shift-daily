@@ -1,8 +1,8 @@
-import { type MouseEvent, useEffect, useRef } from 'react';
-import type { Language } from '../../shared/i18n.ts';
-import type { EvidenceRow } from '../../shared/types.ts';
+import { type MouseEvent, useCallback, useEffect, useRef } from 'react';
+import type { EvidenceRow, SceneTemplateId } from '../../shared/types.ts';
+import { getUiStrings, type Language } from '../../shared/uiStrings.ts';
 import {
-  getCaseHotspots,
+  getTemplateHotspots,
   renderSecurityScene,
   SCENE_HEIGHT,
   SCENE_WIDTH,
@@ -11,27 +11,35 @@ import {
 
 type SecurityMonitorCanvasProps = {
   readonly caseId: string;
+  readonly sceneTemplate: SceneTemplateId;
+  readonly sceneCameraId: string;
+  readonly sceneAccent: string;
   readonly evidence: readonly EvidenceRow[];
-  readonly focusedNodeId: string | null;
-  readonly flaggedNodeId: string | null;
-  readonly ruledOutNodeIds: ReadonlySet<string>;
-  readonly correctNodeId: string | null;
+  readonly focusedIndex: number | null;
+  readonly flaggedIndex: number | null;
+  readonly ruledOutIndices: ReadonlySet<number>;
+  readonly correctIndex: number | null;
   readonly outcome: SceneOutcome;
   readonly lang?: Language | undefined;
   readonly attractMode?: boolean | undefined;
+  readonly whisperText?: string | undefined;
   readonly onSelectEvidence?: ((evidenceId: string) => void) | undefined;
 };
 
 export const SecurityMonitorCanvas = ({
   caseId,
+  sceneTemplate,
+  sceneCameraId,
+  sceneAccent,
   evidence,
-  focusedNodeId,
-  flaggedNodeId,
-  ruledOutNodeIds,
-  correctNodeId,
+  focusedIndex,
+  flaggedIndex,
+  ruledOutIndices,
+  correctIndex,
   outcome,
   lang = 'en',
   attractMode = false,
+  whisperText,
   onSelectEvidence,
 }: SecurityMonitorCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -40,76 +48,39 @@ export const SecurityMonitorCanvas = ({
 
   const stateRef = useRef<{
     caseId: string;
-    focusedNodeId: string | null;
-    flaggedNodeId: string | null;
-    ruledOutNodeIds: ReadonlySet<string>;
-    correctNodeId: string | null;
+    sceneTemplate: SceneTemplateId;
+    sceneAccent: string;
+    focusedIndex: number | null;
+    flaggedIndex: number | null;
+    ruledOutIndices: ReadonlySet<number>;
+    correctIndex: number | null;
     outcome: SceneOutcome;
-    lang: Language;
     attractMode: boolean;
   }>({
     caseId,
-    focusedNodeId,
-    flaggedNodeId,
-    ruledOutNodeIds,
-    correctNodeId,
+    sceneTemplate,
+    sceneAccent,
+    focusedIndex,
+    flaggedIndex,
+    ruledOutIndices,
+    correctIndex,
     outcome,
-    lang,
     attractMode,
   });
 
-  useEffect(() => {
-    stateRef.current = {
-      caseId,
-      focusedNodeId,
-      flaggedNodeId,
-      ruledOutNodeIds,
-      correctNodeId,
-      outcome,
-      lang,
-      attractMode,
-    };
-  }, [
-    caseId,
-    focusedNodeId,
-    flaggedNodeId,
-    ruledOutNodeIds,
-    correctNodeId,
-    outcome,
-    lang,
-    attractMode,
-  ]);
-
-  useEffect(() => {
-    glitchTimerRef.current = 0.2;
-  }, [focusedNodeId, flaggedNodeId]);
-
-  useEffect(() => {
-    if (outcome === 'contained' || outcome === 'breach') {
-      outcomeStartRef.current = performance.now();
-    }
-  }, [outcome]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      return undefined;
-    }
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      return undefined;
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    let rafId = 0;
-    let lastMs = performance.now();
-
-    const drawFrame = (nowMs: number) => {
-      const dt = Math.min(0.05, Math.max(0, (nowMs - lastMs) / 1000));
-      lastMs = nowMs;
+  const drawSingleFrame = useCallback(
+    (nowMs: number, reducedMotion: boolean, dtSec: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return;
+      }
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        return;
+      }
 
       if (glitchTimerRef.current > 0) {
-        glitchTimerRef.current = Math.max(0, glitchTimerRef.current - dt);
+        glitchTimerRef.current = Math.max(0, glitchTimerRef.current - dtSec);
       }
 
       const current = stateRef.current;
@@ -120,38 +91,89 @@ export const SecurityMonitorCanvas = ({
 
       renderSecurityScene(ctx, {
         caseId: current.caseId,
+        sceneTemplate: current.sceneTemplate,
+        sceneAccent: current.sceneAccent,
         timeSec: nowMs / 1000,
-        focusedNodeId: current.focusedNodeId,
-        flaggedNodeId: current.flaggedNodeId,
-        ruledOutNodeIds: current.ruledOutNodeIds,
-        correctNodeId: current.correctNodeId,
+        focusedIndex: current.focusedIndex,
+        flaggedIndex: current.flaggedIndex,
+        ruledOutIndices: current.ruledOutIndices,
+        correctIndex: current.correctIndex,
         outcome: current.outcome,
         outcomeElapsedSec,
         glitchPulse: glitchTimerRef.current,
         attractMode: current.attractMode,
-        reducedMotion: mediaQuery.matches,
-        lang: current.lang,
+        reducedMotion,
       });
+    },
+    []
+  );
+
+  useEffect(() => {
+    stateRef.current = {
+      caseId,
+      sceneTemplate,
+      sceneAccent,
+      focusedIndex,
+      flaggedIndex,
+      ruledOutIndices,
+      correctIndex,
+      outcome,
+      attractMode,
     };
 
-    const loop = (nowMs: number) => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      drawSingleFrame(performance.now(), true, 0);
+    }
+  }, [
+    caseId,
+    sceneTemplate,
+    sceneAccent,
+    focusedIndex,
+    flaggedIndex,
+    ruledOutIndices,
+    correctIndex,
+    outcome,
+    attractMode,
+    drawSingleFrame,
+  ]);
+
+  useEffect(() => {
+    glitchTimerRef.current = 0.2;
+  }, [focusedIndex, flaggedIndex]);
+
+  useEffect(() => {
+    if (outcome === 'contained' || outcome === 'breach') {
+      outcomeStartRef.current = performance.now();
+    }
+  }, [outcome]);
+
+  // Mount the 60 FPS requestAnimationFrame loop ONCE (zero 1s teardown churn).
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let rafId = 0;
+    let lastMs = performance.now();
+
+    const step = (nowMs: number) => {
+      const dt = Math.min(0.05, Math.max(0, (nowMs - lastMs) / 1000));
+      lastMs = nowMs;
+
       if (!document.hidden) {
-        drawFrame(nowMs);
+        drawSingleFrame(nowMs, mediaQuery.matches, dt);
       }
       if (!mediaQuery.matches) {
-        rafId = window.requestAnimationFrame(loop);
+        rafId = window.requestAnimationFrame(step);
       }
     };
 
-    drawFrame(performance.now());
+    drawSingleFrame(lastMs, mediaQuery.matches, 0);
     if (!mediaQuery.matches) {
-      rafId = window.requestAnimationFrame(loop);
+      rafId = window.requestAnimationFrame(step);
     }
 
     const handleVisibility = () => {
       if (!document.hidden) {
         lastMs = performance.now();
-        drawFrame(lastMs);
+        drawSingleFrame(lastMs, mediaQuery.matches, 0);
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
@@ -162,16 +184,7 @@ export const SecurityMonitorCanvas = ({
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [
-    caseId,
-    focusedNodeId,
-    flaggedNodeId,
-    ruledOutNodeIds,
-    correctNodeId,
-    outcome,
-    lang,
-    attractMode,
-  ]);
+  }, [drawSingleFrame]);
 
   const handleCanvasClick = (event: MouseEvent<HTMLCanvasElement>) => {
     if (!onSelectEvidence || attractMode) {
@@ -189,8 +202,8 @@ export const SecurityMonitorCanvas = ({
     const logicalX = ((event.clientX - rect.left) / rect.width) * SCENE_WIDTH;
     const logicalY = ((event.clientY - rect.top) / rect.height) * SCENE_HEIGHT;
 
-    const hotspots = getCaseHotspots(caseId);
-    let nearestNodeId: string | null = null;
+    const hotspots = getTemplateHotspots(sceneTemplate);
+    let nearestIndex: number | null = null;
     let nearestDistSq = 46 * 46;
 
     for (const spot of hotspots) {
@@ -199,22 +212,56 @@ export const SecurityMonitorCanvas = ({
       const distSq = dx * dx + dy * dy;
       if (distSq <= nearestDistSq) {
         nearestDistSq = distSq;
-        nearestNodeId = spot.nodeId;
+        nearestIndex = spot.index;
       }
     }
 
-    if (!nearestNodeId) {
+    if (nearestIndex === null) {
       return;
     }
 
-    const matchingRow = evidence.find((row) => row.nodeId === nearestNodeId);
+    const matchingRow = evidence[nearestIndex];
     if (matchingRow) {
       onSelectEvidence(matchingRow.id);
     }
   };
 
+  const ui = getUiStrings(lang);
+  const statusTag =
+    outcome === 'contained'
+      ? ui.camLockdown
+      : outcome === 'breach'
+        ? ui.camBreach
+        : outcome === 'verifying'
+          ? ui.camScanning
+          : ui.camLive;
+  const statusClasses =
+    outcome === 'contained'
+      ? 'text-emerald-300'
+      : outcome === 'breach'
+        ? 'text-rose-300'
+        : 'text-amber-300';
+
   return (
-    <div className="relative overflow-hidden rounded-lg border border-slate-700/80 bg-[#05080d] shadow-inner">
+    <div className="overflow-hidden rounded-lg border border-slate-700/80 bg-[#05080d] shadow-inner">
+      {/* Crisp DOM Camera Top HUD (razor-sharp in both English and Thai) */}
+      <div className="flex items-center justify-between gap-2 border-b border-slate-800/90 bg-[#070b12] px-2.5 py-1 font-mono text-[10px]">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            aria-hidden="true"
+            className="hd-beacon-pulse h-1.5 w-1.5 shrink-0 rounded-full bg-rose-400"
+          />
+          <span className="truncate font-semibold tracking-wider text-slate-200">
+            REC {sceneCameraId}
+          </span>
+        </div>
+        <span
+          className={`shrink-0 font-bold tracking-wider uppercase ${statusClasses}`}
+        >
+          {statusTag}
+        </span>
+      </div>
+
       <canvas
         ref={canvasRef}
         width={SCENE_WIDTH}
@@ -226,6 +273,16 @@ export const SecurityMonitorCanvas = ({
         }`}
         style={{ imageRendering: 'pixelated' }}
       />
+
+      {/* Live CCTV Bottom Telemetry Whisper Strip */}
+      {!attractMode && whisperText ? (
+        <div className="flex items-center gap-1.5 border-t border-slate-800/90 bg-[#070b12] px-2.5 py-1 font-mono text-[10px] leading-tight text-slate-300">
+          <span className="shrink-0 font-bold text-amber-400">
+            {ui.telemetryPrefix} //
+          </span>
+          <span className="truncate">{whisperText}</span>
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -2,19 +2,45 @@ let sharedCtx: AudioContext | null = null;
 let activeVoiceCount = 0;
 const MAX_ACTIVE_VOICES = 6;
 
-const getAudioContext = (): AudioContext | null => {
+const isAudioContext = (value: unknown): value is AudioContext => {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'createOscillator' in value &&
+    'createGain' in value &&
+    'destination' in value &&
+    'currentTime' in value &&
+    'state' in value
+  );
+};
+
+const createAudioContextInstance = (): AudioContext | null => {
   if (typeof window === 'undefined') {
     return null;
   }
-  if (!('AudioContext' in window) || typeof window.AudioContext !== 'function') {
-    return null;
+  if (typeof window.AudioContext === 'function') {
+    return new window.AudioContext();
   }
+  const webkitCtor: unknown = Reflect.get(window, 'webkitAudioContext');
+  if (typeof webkitCtor === 'function') {
+    const instance: unknown = Reflect.construct(webkitCtor, []);
+    if (isAudioContext(instance)) {
+      return instance;
+    }
+  }
+  return null;
+};
+
+const getAudioContext = (): AudioContext | null => {
   if (!sharedCtx) {
     try {
-      sharedCtx = new window.AudioContext();
+      sharedCtx = createAudioContextInstance();
     } catch {
       return null;
     }
+  }
+  if (!sharedCtx) {
+    return null;
   }
   if (sharedCtx.state === 'suspended') {
     void sharedCtx.resume().catch(() => {});

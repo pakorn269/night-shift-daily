@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { DEFAULT_LANGUAGE, type Language } from '../../shared/i18n.ts';
+import { DEFAULT_LANGUAGE, type Language } from '../../shared/uiStrings.ts';
 
 const STORAGE_KEY = 'night-shift-daily:lang';
 

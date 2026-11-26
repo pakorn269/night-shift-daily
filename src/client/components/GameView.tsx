@@ -1,9 +1,6 @@
-import { useEffect, useState } from 'react';
-import {
-  getUiStrings,
-  localizeCase,
-  localizeEvaluation,
-} from '../../shared/i18n.ts';
+import { useEffect, useMemo, useState } from 'react';
+import { formatDuration } from '../../shared/shareFormat.ts';
+import { getUiStrings } from '../../shared/uiStrings.ts';
 import type { SceneOutcome } from '../canvas/sceneRenderer.ts';
 import { useDailyShift } from '../hooks/useDailyShift.ts';
 import { useLanguage } from '../hooks/useLanguage.ts';
@@ -15,12 +12,6 @@ import { VerdictPanel } from './VerdictPanel.tsx';
 
 const formatShiftNumber = (shiftNumber: number): string => {
   return String(shiftNumber).padStart(3, '0');
-};
-
-const formatStopwatch = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 };
 
 export const GameView = () => {
@@ -36,10 +27,30 @@ export const GameView = () => {
     toggleRuleOut,
     selectAction,
     submitVerdict,
+    shareToComments,
     replayCurrentCase,
   } = useDailyShift();
 
   const [showBrief, setShowBrief] = useState(false);
+
+  const activeIncident = state.session
+    ? language === 'th'
+      ? state.session.incidents.th
+      : state.session.incidents.en
+    : null;
+
+  const ruledOutIndices = useMemo(() => {
+    const indices = new Set<number>();
+    if (!activeIncident) {
+      return indices;
+    }
+    activeIncident.evidence.forEach((row, idx) => {
+      if (state.ruledOutIds.includes(row.id)) {
+        indices.add(idx);
+      }
+    });
+    return indices;
+  }, [activeIncident, state.ruledOutIds]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -53,7 +64,7 @@ export const GameView = () => {
       ) {
         return;
       }
-      const rows = state.session.incident.evidence;
+      const rows = state.session.incidents.en.evidence;
       const digit = Number(event.key);
       if (Number.isInteger(digit) && digit >= 1 && digit <= rows.length) {
         const row = rows[digit - 1];
@@ -132,7 +143,7 @@ export const GameView = () => {
           <button
             type="button"
             onClick={() => void loadDailyShift()}
-            className="hd-cut-sm hd-trigger-armed w-full min-h-[48px] cursor-pointer px-4 py-2.5 font-mono text-xs font-bold uppercase"
+            className="hd-cut-sm hd-trigger-armed w-full min-h-[46px] cursor-pointer px-4 py-2.5 font-mono text-xs font-bold uppercase"
           >
             {ui.retryConnection}
           </button>
@@ -142,14 +153,9 @@ export const GameView = () => {
   }
 
   const session = state.session;
-  if (!session) {
+  if (!session || !activeIncident) {
     return null;
   }
-
-  const incident = localizeCase(session.incident, language);
-  const localizedEvaluation = state.evaluation
-    ? localizeEvaluation(state.evaluation, language)
-    : null;
 
   const isSubmitting = state.status === 'submitting';
   const isEvaluated = state.status === 'evaluated';
@@ -158,60 +164,63 @@ export const GameView = () => {
     state.selectedEvidenceId !== null &&
     state.selectedActionId !== null;
 
-  const focusedRow = incident.evidence.find(
+  const focusedIdx = activeIncident.evidence.findIndex(
     (row) => row.id === state.focusedEvidenceId
   );
-  const flaggedRow = incident.evidence.find(
+  const flaggedIdx = activeIncident.evidence.findIndex(
     (row) => row.id === state.selectedEvidenceId
   );
-  const correctRow = localizedEvaluation
-    ? incident.evidence.find(
-        (row) => row.id === localizedEvaluation.correctEvidenceId
+  const correctIdx = state.evaluation
+    ? activeIncident.evidence.findIndex(
+        (row) => row.id === state.evaluation?.correctEvidenceId
       )
-    : undefined;
+    : -1;
 
-  const ruledOutNodeIds = new Set<string>();
-  for (const row of incident.evidence) {
-    if (state.ruledOutIds.includes(row.id)) {
-      ruledOutNodeIds.add(row.nodeId);
-    }
-  }
+  const focusedRow =
+    focusedIdx >= 0 ? activeIncident.evidence[focusedIdx] : activeIncident.evidence[0];
 
   let canvasOutcome: SceneOutcome = 'idle';
   if (isSubmitting) {
     canvasOutcome = 'verifying';
-  } else if (localizedEvaluation) {
-    canvasOutcome = localizedEvaluation.correct ? 'contained' : 'breach';
+  } else if (state.evaluation) {
+    canvasOutcome = state.evaluation.correct ? 'contained' : 'breach';
   }
 
+  const currentStreak = session.playerStats.currentStreak;
+
   return (
-    <main className="hd-dither min-h-screen w-full px-2 py-2.5 pb-6 sm:px-4 sm:py-4">
+    <main className="hd-dither min-h-screen w-full px-2 py-2 pb-4 sm:px-4 sm:py-3">
       <div
-        className={`hd-console-shell mx-auto w-full max-w-xl overflow-hidden ${
+        className={`hd-console-shell mx-auto w-full max-w-xl md:max-w-4xl overflow-hidden ${
           state.feedbackEvent === 'breach' ? 'hd-console-shake' : ''
         }`}
       >
         <div className="hd-laser-beam" />
 
-        <div className="space-y-2.5 p-3 sm:p-4">
-          {/* Compact 1-Row Hardware Top Bezel */}
-          <header className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-800 bg-[#090d14] px-2.5 py-2">
+        <div className="space-y-2 p-2.5 sm:p-3.5">
+          {/* Guaranteed 1-Row Compact Hardware Top Bezel */}
+          <header className="flex items-center justify-between gap-1.5 rounded-md border border-slate-800 bg-[#090d14] px-2 py-1.5">
             <div className="flex items-center gap-1.5 min-w-0">
               <span
                 aria-hidden="true"
                 className="hd-beacon-pulse h-2 w-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]"
               />
-              <span className="font-mono text-[11px] font-bold tracking-wider text-amber-300 uppercase">
+              <span className="whitespace-nowrap font-mono text-[11px] font-bold tracking-wider text-amber-300 uppercase">
                 {ui.shiftWord} #{formatShiftNumber(session.shiftNumber)}
               </span>
-              <span className="truncate font-mono text-[10px] text-slate-400">
+              {currentStreak > 0 ? (
+                <span className="shrink-0 rounded border border-amber-400/50 bg-amber-950/45 px-1 py-0.5 font-mono text-[9px] font-bold text-amber-200">
+                  🔥{currentStreak}
+                </span>
+              ) : null}
+              <span className="hidden truncate font-mono text-[10px] text-slate-400 sm:inline">
                 · u/{session.username}
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 font-mono text-[10px]">
+            <div className="flex shrink-0 items-center gap-1 font-mono text-[10px]">
               <span className="rounded border border-amber-400/40 bg-amber-950/35 px-1.5 py-0.5 text-amber-200">
-                {formatStopwatch(state.elapsedSeconds)}
+                {formatDuration(state.elapsedSeconds)}
               </span>
               <button
                 type="button"
@@ -225,112 +234,139 @@ export const GameView = () => {
             </div>
           </header>
 
-          {/* Hero 60 FPS Animated Pixel-Art Security Monitor */}
-          <SecurityMonitorCanvas
-            caseId={incident.id}
-            evidence={incident.evidence}
-            focusedNodeId={focusedRow?.nodeId ?? null}
-            flaggedNodeId={flaggedRow?.nodeId ?? null}
-            ruledOutNodeIds={ruledOutNodeIds}
-            correctNodeId={correctRow?.nodeId ?? null}
-            outcome={canvasOutcome}
-            lang={language}
-            onSelectEvidence={focusEvidence}
-          />
-
-          {/* Compact Case Title + 1-Line Verified Rule */}
-          <section className="rounded-md border border-slate-800 bg-[#0b1018] px-3 py-2 space-y-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-start gap-1.5 min-w-0">
-                <span className="mt-0.5 shrink-0 rounded border border-rose-400/70 bg-rose-950/70 px-1.5 py-0.5 font-mono text-[9px] font-bold text-rose-200">
-                  {incident.incidentCode}
-                </span>
-                <h1 className="text-sm font-bold leading-snug text-slate-50">
-                  {incident.title}
-                </h1>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowBrief((prev) => !prev)}
-                aria-expanded={showBrief}
-                className="shrink-0 cursor-pointer rounded border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[10px] text-slate-300 hover:border-slate-500"
-              >
-                {showBrief ? ui.hideBrief : ui.showBrief}
-              </button>
-            </div>
-
-            {showBrief ? (
-              <p className="text-xs leading-relaxed text-slate-300 border-t border-slate-800 pt-1.5">
-                {incident.summary}
-              </p>
-            ) : null}
-
-            <p className="font-mono text-[11px] leading-relaxed text-amber-200">
-              <strong className="text-amber-400">{ui.rulePrefix}</strong>{' '}
-              {incident.shortRule}
-            </p>
-          </section>
-
           {state.errorMessage ? (
             <div
               role="alert"
-              className="rounded border border-rose-400 bg-rose-950/40 px-3 py-2 text-xs text-rose-100"
+              className="rounded border border-rose-400 bg-rose-950/40 px-3 py-1.5 text-xs text-rose-100"
             >
               {state.errorMessage}
             </div>
           ) : null}
 
-          {!isEvaluated ? (
-            <>
-              <ClueDeck
-                rows={incident.evidence}
-                focusedEvidenceId={state.focusedEvidenceId}
-                selectedEvidenceId={state.selectedEvidenceId}
-                ruledOutIds={state.ruledOutIds}
-                evaluation={localizedEvaluation}
-                ui={ui}
-                disabled={isSubmitting}
-                onFocus={focusEvidence}
-                onFlag={selectEvidence}
-                onToggleRuleOut={toggleRuleOut}
+          {/* Responsive 2-Column Desktop Console / Tight 1-Column Mobile Stack */}
+          <div className="space-y-2 md:grid md:grid-cols-[1.12fr_1fr] md:items-start md:gap-3.5 md:space-y-0">
+            {/* Left Column: Hero 60 FPS CCTV Monitor + Case Rule/Brief */}
+            <div className="space-y-2">
+              <SecurityMonitorCanvas
+                caseId={activeIncident.id}
+                sceneTemplate={activeIncident.sceneTemplate}
+                sceneCameraId={activeIncident.sceneCameraId}
+                sceneAccent={activeIncident.sceneAccent}
+                evidence={activeIncident.evidence}
+                focusedIndex={focusedIdx >= 0 ? focusedIdx : null}
+                flaggedIndex={flaggedIdx >= 0 ? flaggedIdx : null}
+                ruledOutIndices={ruledOutIndices}
+                correctIndex={correctIdx >= 0 ? correctIdx : null}
+                outcome={canvasOutcome}
+                lang={language}
+                whisperText={focusedRow?.whisper}
+                onSelectEvidence={focusEvidence}
               />
 
-              <ActionSelector
-                actions={incident.actions}
-                selectedActionId={state.selectedActionId}
-                evaluation={localizedEvaluation}
-                hasFlaggedEvidence={state.selectedEvidenceId !== null}
-                ui={ui}
-                disabled={isSubmitting}
-                onSelect={selectAction}
-              />
+              <section className="rounded-md border border-slate-800 bg-[#0b1018] px-2.5 py-2 space-y-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-1.5 min-w-0">
+                    <span className="mt-0.5 shrink-0 rounded border border-rose-400/70 bg-rose-950/70 px-1.5 py-0.5 font-mono text-[9px] font-bold text-rose-200">
+                      {activeIncident.incidentCode}
+                    </span>
+                    <div className="min-w-0">
+                      <h1 className="text-[13px] font-bold leading-snug text-slate-50">
+                        {activeIncident.title}
+                      </h1>
+                      <p className="font-mono text-[9px] text-slate-400 sm:hidden">
+                        {activeIncident.category} · u/{session.username}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowBrief((prev) => !prev)}
+                    aria-expanded={showBrief}
+                    className="shrink-0 cursor-pointer rounded border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[10px] text-slate-300 hover:border-slate-500"
+                  >
+                    {showBrief ? ui.hideBrief : ui.showBrief}
+                  </button>
+                </div>
 
-              <button
-                type="button"
-                disabled={!canSubmit}
-                onClick={() => void submitVerdict()}
-                className={`hd-cut-sm w-full min-h-[48px] px-4 py-3 font-mono text-xs font-extrabold tracking-wider uppercase ${
-                  canSubmit
-                    ? 'hd-trigger-armed cursor-pointer'
-                    : 'hd-trigger-locked cursor-not-allowed'
-                } ${isSubmitting ? 'hd-scan-sweep' : ''}`}
-              >
-                {isSubmitting
-                  ? ui.verifyingTelemetry
-                  : canSubmit
-                    ? ui.executeContainment
-                    : ui.lockAndArmHint}
-              </button>
-            </>
-          ) : localizedEvaluation ? (
-            <VerdictPanel
-              evaluation={localizedEvaluation}
-              elapsedSeconds={state.elapsedSeconds}
-              ui={ui}
-              onReplay={replayCurrentCase}
-              onLoadLatest={() => void loadDailyShift()}
-            />
-          ) : null}
+                {showBrief ? (
+                  <div className="space-y-1 border-t border-slate-800 pt-1.5 text-xs leading-snug text-slate-300">
+                    <p>{activeIncident.summary}</p>
+                    <p className="font-mono text-[10px] text-slate-400">
+                      <strong className="text-slate-200">
+                        {ui.protocolLabel}
+                      </strong>{' '}
+                      {activeIncident.protocolRule}
+                    </p>
+                  </div>
+                ) : null}
+
+                <p className="font-mono text-[11px] leading-snug text-amber-200">
+                  <strong className="text-amber-400">{ui.rulePrefix}</strong>{' '}
+                  {activeIncident.shortRule}
+                </p>
+              </section>
+            </div>
+
+            {/* Right Column: Triage Controls OR Verdict & Community Debrief */}
+            <div className="space-y-2">
+              {!isEvaluated ? (
+                <>
+                  <ClueDeck
+                    rows={activeIncident.evidence}
+                    focusedEvidenceId={state.focusedEvidenceId}
+                    selectedEvidenceId={state.selectedEvidenceId}
+                    ruledOutIds={state.ruledOutIds}
+                    ui={ui}
+                    disabled={isSubmitting}
+                    onFocus={focusEvidence}
+                    onFlag={selectEvidence}
+                    onToggleRuleOut={toggleRuleOut}
+                  />
+
+                  <ActionSelector
+                    actions={activeIncident.actions}
+                    selectedActionId={state.selectedActionId}
+                    hasFlaggedEvidence={state.selectedEvidenceId !== null}
+                    ui={ui}
+                    disabled={isSubmitting}
+                    onSelect={selectAction}
+                  />
+
+                  <button
+                    type="button"
+                    disabled={!canSubmit}
+                    onClick={() => void submitVerdict()}
+                    className={`hd-cut-sm w-full min-h-[44px] px-4 py-2.5 font-mono text-xs font-extrabold tracking-wider uppercase ${
+                      canSubmit
+                        ? 'hd-trigger-armed cursor-pointer'
+                        : 'hd-trigger-locked cursor-not-allowed'
+                    } ${isSubmitting ? 'hd-scan-sweep' : ''}`}
+                  >
+                    {isSubmitting
+                      ? ui.verifyingTelemetry
+                      : canSubmit
+                        ? ui.executeContainment
+                        : ui.lockAndArmHint}
+                  </button>
+                </>
+              ) : state.evaluation ? (
+                <VerdictPanel
+                  evaluation={state.evaluation}
+                  actions={activeIncident.actions}
+                  nextRolloverUtc={session.nextRolloverUtc}
+                  lang={language}
+                  ui={ui}
+                  commentShareStatus={state.commentShareStatus}
+                  shareErrorMessage={state.shareErrorMessage}
+                  onShareToComments={(nativeEvent) =>
+                    void shareToComments(nativeEvent, language)
+                  }
+                  onReplay={replayCurrentCase}
+                  onLoadLatest={() => void loadDailyShift()}
+                />
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
     </main>

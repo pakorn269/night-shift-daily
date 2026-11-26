@@ -1,11 +1,17 @@
 import type {
   ApiErrorCode,
   ApiErrorResponse,
+  CommunityStats,
   ContainmentAction,
   DailyCaseResponse,
   EvaluateResponse,
+  EvaluationCopy,
   EvidenceRow,
+  PlayerStats,
   PublicCase,
+  RankCode,
+  SceneTemplateId,
+  ShareCommentResponse,
 } from './types.ts';
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -22,6 +28,37 @@ const isBoolean = (value: unknown): value is boolean => {
 
 const isNumber = (value: unknown): value is number => {
   return typeof value === 'number' && Number.isFinite(value);
+};
+
+const isNumberRecord = (
+  value: unknown
+): value is Readonly<Record<string, number>> => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return Object.values(value).every(isNumber);
+};
+
+export const isSceneTemplateId = (
+  value: unknown
+): value is SceneTemplateId => {
+  return (
+    value === 'annex-cutaway' ||
+    value === 'pbx-vlan' ||
+    value === 'tape-vault' ||
+    value === 'server-rack' ||
+    value === 'hvac-power'
+  );
+};
+
+export const isRankCode = (value: unknown): value is RankCode => {
+  return (
+    value === 'S' ||
+    value === 'A' ||
+    value === 'B' ||
+    value === 'C' ||
+    value === 'F'
+  );
 };
 
 const isEvidenceRow = (value: unknown): value is EvidenceRow => {
@@ -64,6 +101,9 @@ const isPublicCase = (value: unknown): value is PublicCase => {
     isString(value['id']) &&
     isNumber(value['caseNumber']) &&
     isString(value['incidentCode']) &&
+    isSceneTemplateId(value['sceneTemplate']) &&
+    isString(value['sceneCameraId']) &&
+    isString(value['sceneAccent']) &&
     isString(value['title']) &&
     isString(value['teaser']) &&
     isString(value['loggedAtUtc']) &&
@@ -77,6 +117,50 @@ const isPublicCase = (value: unknown): value is PublicCase => {
   );
 };
 
+const isPlayerStats = (value: unknown): value is PlayerStats => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const firstRank = value['firstAttemptRank'];
+  return (
+    isNumber(value['currentStreak']) &&
+    isNumber(value['bestStreak']) &&
+    isNumber(value['totalSolved']) &&
+    isBoolean(value['solvedToday']) &&
+    isBoolean(value['firstAttemptAttempted']) &&
+    (firstRank === null || isRankCode(firstRank)) &&
+    isBoolean(value['sharedToday'])
+  );
+};
+
+const isCommunityStats = (value: unknown): value is CommunityStats => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNumber(value['totalAnalysts']) &&
+    isNumber(value['containedCount']) &&
+    isNumber(value['containmentRatePct']) &&
+    isNumberRecord(value['actionCounts']) &&
+    isNumberRecord(value['evidenceCounts'])
+  );
+};
+
+const isEvaluationCopy = (value: unknown): value is EvaluationCopy => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isString(value['correctEvidenceShortLabel']) &&
+    isString(value['selectedEvidenceShortLabel']) &&
+    isString(value['correctActionLabel']) &&
+    isString(value['selectedActionLabel']) &&
+    isString(value['evidenceExplanation']) &&
+    isString(value['actionExplanation']) &&
+    isString(value['selectedActionNote'])
+  );
+};
+
 export const isDailyCaseResponse = (
   value: unknown
 ): value is DailyCaseResponse => {
@@ -84,6 +168,10 @@ export const isDailyCaseResponse = (
     return false;
   }
   const postId = value['postId'];
+  const incidents = value['incidents'];
+  if (!isRecord(incidents)) {
+    return false;
+  }
   return (
     value['type'] === 'daily' &&
     isString(value['utcDate']) &&
@@ -92,7 +180,10 @@ export const isDailyCaseResponse = (
     isString(value['nextRolloverUtc']) &&
     isString(value['username']) &&
     (postId === null || isString(postId)) &&
-    isPublicCase(value['incident'])
+    isPublicCase(incidents['en']) &&
+    isPublicCase(incidents['th']) &&
+    isPlayerStats(value['playerStats']) &&
+    isCommunityStats(value['communityStats'])
   );
 };
 
@@ -102,24 +193,51 @@ export const isEvaluateResponse = (
   if (!isRecord(value)) {
     return false;
   }
+  const localized = value['localized'];
+  if (!isRecord(localized)) {
+    return false;
+  }
   return (
     value['type'] === 'evaluation' &&
     isString(value['caseId']) &&
+    isString(value['incidentCode']) &&
+    isNumber(value['shiftNumber']) &&
     isBoolean(value['correct']) &&
     isBoolean(value['evidenceCorrect']) &&
     isBoolean(value['actionCorrect']) &&
+    isRankCode(value['rankCode']) &&
+    isNumber(value['elapsedSeconds']) &&
+    isNumber(value['clearedCount']) &&
+    isBoolean(value['isFirstAttempt']) &&
+    isNumber(value['attemptNumber']) &&
     isString(value['selectedEvidenceId']) &&
+    isString(value['selectedEvidenceSource']) &&
     isString(value['selectedActionId']) &&
     isString(value['correctEvidenceId']) &&
     isString(value['correctActionId']) &&
     isString(value['correctEvidenceSource']) &&
     isString(value['correctEvidenceTimestamp']) &&
-    isString(value['correctActionLabel']) &&
-    isString(value['evidenceExplanation']) &&
-    isString(value['actionExplanation']) &&
-    isString(value['selectedActionNote']) &&
+    isEvaluationCopy(localized['en']) &&
+    isEvaluationCopy(localized['th']) &&
     isString(value['currentUtcDate']) &&
-    isBoolean(value['newShiftAvailable'])
+    isBoolean(value['newShiftAvailable']) &&
+    isPlayerStats(value['playerStats']) &&
+    isCommunityStats(value['communityStats'])
+  );
+};
+
+export const isShareCommentResponse = (
+  value: unknown
+): value is ShareCommentResponse => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const commentUrl = value['commentUrl'];
+  return (
+    value['type'] === 'share' &&
+    isString(value['commentId']) &&
+    (commentUrl === null || isString(commentUrl)) &&
+    isString(value['text'])
   );
 };
 
@@ -130,6 +248,10 @@ const isApiErrorCode = (value: unknown): value is ApiErrorCode => {
     value === 'MISSING_SELECTION' ||
     value === 'INVALID_EVIDENCE' ||
     value === 'INVALID_ACTION' ||
+    value === 'MISSING_POST_CONTEXT' ||
+    value === 'ALREADY_SHARED' ||
+    value === 'PERMISSION_REQUIRED' ||
+    value === 'SHARE_FAILED' ||
     value === 'INTERNAL_ERROR'
   );
 };

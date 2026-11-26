@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { createInMemoryShiftStore } from '../src/server/core/store.ts';
 import { createApiRouter } from '../src/server/routes/api.ts';
 
 const DIST_CLIENT_DIR = resolve(process.cwd(), 'dist', 'client');
@@ -42,6 +43,9 @@ const parseDateOverride = (
   return new Date();
 };
 
+const localStore = createInMemoryShiftStore();
+let simulatedCommentSeq = 1;
+
 const app = new Hono();
 
 app.all('/api/*', async (c) => {
@@ -51,10 +55,20 @@ app.all('/api/*', async (c) => {
   );
   const apiRouter = createApiRouter({
     getNow: () => dateOverride,
+    store: localStore,
     getSessionContext: async () => ({
       postId: 't3_local_preview',
+      userId: 't2_local_analyst',
       username: 'local_analyst',
     }),
+    submitUserComment: async (input) => {
+      const id = `t1_local_${simulatedCommentSeq++}`;
+      console.log(`[local-preview] Simulated Reddit comment (${id}) on ${input.postId}:\n${input.text}\n`);
+      return {
+        commentId: id,
+        commentUrl: `https://www.reddit.com/r/night_shift_daily_dev/comments/local/${id}`,
+      };
+    },
   });
 
   const rewrittenUrl = new URL(c.req.url);
@@ -95,6 +109,4 @@ serve({
 
 console.log(`Night Shift Daily local preview running at http://127.0.0.1:${port}`);
 console.log(`  Inline card (Case 1): http://127.0.0.1:${port}/splash.html?date=2026-11-25`);
-console.log(`  Game (Case 1):        http://127.0.0.1:${port}/game.html?date=2026-11-25`);
-console.log(`  Game (Case 2):        http://127.0.0.1:${port}/game.html?date=2026-11-26`);
-console.log(`  Game (Case 3):        http://127.0.0.1:${port}/game.html?date=2026-11-27`);
+console.log(`  Cases 1–9:            http://127.0.0.1:${port}/game.html?date=2026-11-25 .. 2026-12-03`);

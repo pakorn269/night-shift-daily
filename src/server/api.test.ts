@@ -4,16 +4,32 @@ import {
   isApiErrorResponse,
   isDailyCaseResponse,
   isEvaluateResponse,
+  isShareCommentResponse,
 } from '../shared/guards.ts';
+import { createInMemoryShiftStore } from './core/store.ts';
 import { createApiRouter } from './routes/api.ts';
 
-void describe('Hono API routes', () => {
-  void it('GET /daily returns today case without leaking solution and supports guest/non-mod fallback', async () => {
+void describe('Hono API routes with Redis/in-memory persistence & Reddit sharing', () => {
+  void it('GET /daily returns localized public cases without leaking solutions and hides consensus picks before attempt #1', async () => {
+    const store = createInMemoryShiftStore();
+    await store.recordAttempt({
+      utcDate: '2026-11-25',
+      userId: 't2_other',
+      correct: true,
+      evidenceCorrect: true,
+      actionCorrect: true,
+      evidenceId: 'ev-1c',
+      actionId: 'act-1a',
+      rankCode: 'S',
+    });
+
     const api = createApiRouter({
       getNow: () => new Date('2026-11-25T10:15:00.000Z'),
+      store,
       getSessionContext: async () => ({
-        postId: null,
-        username: 'analyst',
+        postId: 't3_demo',
+        userId: 't2_fresh',
+        username: 'analyst_fresh',
       }),
     });
 
@@ -25,73 +41,60 @@ void describe('Hono API routes', () => {
     if (isDailyCaseResponse(payload)) {
       assert.equal(payload.utcDate, '2026-11-25');
       assert.equal(payload.shiftNumber, 1);
-      assert.equal(payload.totalCases, 3);
-      assert.equal(payload.username, 'analyst');
-      assert.equal(payload.postId, null);
-      assert.equal(payload.incident.id, 'case-01');
-      assert.equal('solution' in payload.incident, false);
+      assert.equal(payload.totalCases, 9);
+      assert.equal(payload.incidents.en.id, 'case-01');
+      assert.notEqual(payload.incidents.th.title, payload.incidents.en.title);
+      assert.equal('solution' in payload.incidents.en, false);
+      assert.equal(payload.communityStats.totalAnalysts, 1);
+      assert.equal(payload.communityStats.containmentRatePct, 100);
+      // Must NOT expose per-action/evidence breakdowns before user plays Attempt #1!
+      assert.deepEqual(payload.communityStats.actionCounts, {});
+      assert.deepEqual(payload.communityStats.evidenceCounts, {});
     }
   });
 
-  void it('GET /daily updates case across 00:00 UTC rollover', async () => {
-    let currentTime = new Date('2026-11-25T23:59:59.000Z');
+  void it('records Attempt #1 toward consensus & streak while allowing unlimited Practice Replays without double-counting', async () => {
+    const store = createInMemoryShiftStore();
     const api = createApiRouter({
-      getNow: () => currentTime,
+      getNow: () => new Date('2026-11-25T05:00:00.000Z'),
+      store,
       getSessionContext: async () => ({
         postId: 't3_demo',
+        userId: 't2_judge',
         username: 'judge_user',
       }),
     });
 
-    const beforeRes = await api.request('/daily');
-    const beforeData: unknown = await beforeRes.json();
-    assert.equal(isDailyCaseResponse(beforeData), true);
-    if (isDailyCaseResponse(beforeData)) {
-      assert.equal(beforeData.incident.id, 'case-01');
-    }
-
-    currentTime = new Date('2026-11-26T00:00:01.000Z');
-    const afterRes = await api.request('/daily');
-    const afterData: unknown = await afterRes.json();
-    assert.equal(isDailyCaseResponse(afterData), true);
-    if (isDailyCaseResponse(afterData)) {
-      assert.equal(afterData.incident.id, 'case-02');
-      assert.equal(afterData.shiftNumber, 2);
-    }
-  });
-
-  void it('POST /evaluate grades repeated attempts without lockout and handles rollover in-progress attempts', async () => {
-    let currentTime = new Date('2026-11-25T23:59:50.000Z');
-    const api = createApiRouter({
-      getNow: () => currentTime,
-      getSessionContext: async () => ({
-        postId: 't3_demo',
-        username: 'player_one',
-      }),
-    });
-
-    // First attempt: wrong evidence and wrong action
-    const wrongRes = await api.request('/evaluate', {
+    // Attempt #1: wrong evidence + wrong action (0/2 -> Rank F)
+    const firstRes = await api.request('/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         caseId: 'case-01',
         evidenceId: 'ev-1a',
-        actionId: 'act-1c',
+        actionId: 'act-1b',
         startedUtcDate: '2026-11-25',
+        elapsedSeconds: 40,
+        clearedCount: 2,
+        attemptNumber: 1,
       }),
     });
-    assert.equal(wrongRes.status, 200);
-    const wrongBody: unknown = await wrongRes.json();
-    assert.equal(isEvaluateResponse(wrongBody), true);
-    if (isEvaluateResponse(wrongBody)) {
-      assert.equal(wrongBody.correct, false);
-      assert.equal(wrongBody.newShiftAvailable, false);
+    assert.equal(firstRes.status, 200);
+    const firstBody: unknown = await firstRes.json();
+    assert.equal(isEvaluateResponse(firstBody), true);
+    if (isEvaluateResponse(firstBody)) {
+      assert.equal(firstBody.isFirstAttempt, true);
+      assert.equal(firstBody.correct, false);
+      assert.equal(firstBody.rankCode, 'F');
+      assert.equal(firstBody.playerStats.currentStreak, 0);
+      assert.equal(firstBody.playerStats.firstAttemptRank, 'F');
+      assert.equal(firstBody.communityStats.totalAnalysts, 1);
+      assert.equal(firstBody.communityStats.containedCount, 0);
+      assert.equal(firstBody.communityStats.actionCounts['act-1b'], 1);
     }
 
-    // Advance past 00:00 UTC rollover while player retries the same in-progress case
-    currentTime = new Date('2026-11-26T00:00:10.000Z');
-    const retryRes = await api.request('/evaluate', {
+    // Attempt #2 (Replay): correct answer — succeeds without lockout, does NOT inflate community stats
+    const replayRes = await api.request('/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -99,25 +102,180 @@ void describe('Hono API routes', () => {
         evidenceId: 'ev-1c',
         actionId: 'act-1a',
         startedUtcDate: '2026-11-25',
+        elapsedSeconds: 5,
+        clearedCount: 0,
+        attemptNumber: 2,
       }),
     });
-    assert.equal(retryRes.status, 200);
-    const retryBody: unknown = await retryRes.json();
-    assert.equal(isEvaluateResponse(retryBody), true);
-    if (isEvaluateResponse(retryBody)) {
-      assert.equal(retryBody.caseId, 'case-01');
-      assert.equal(retryBody.correct, true);
-      assert.equal(retryBody.newShiftAvailable, true);
-      assert.equal(retryBody.currentUtcDate, '2026-11-26');
+    assert.equal(replayRes.status, 200);
+    const replayBody: unknown = await replayRes.json();
+    assert.equal(isEvaluateResponse(replayBody), true);
+    if (isEvaluateResponse(replayBody)) {
+      assert.equal(replayBody.isFirstAttempt, false);
+      assert.equal(replayBody.attemptNumber, 2);
+      assert.equal(replayBody.correct, true);
+      assert.equal(replayBody.playerStats.firstAttemptRank, 'F');
+      assert.equal(replayBody.playerStats.solvedToday, true);
+      assert.equal(replayBody.playerStats.currentStreak, 1);
+      // Community stats remain anchored to Attempt #1
+      assert.equal(replayBody.communityStats.totalAnalysts, 1);
+      assert.equal(replayBody.communityStats.containedCount, 0);
     }
   });
 
-  void it('POST /evaluate returns structured 400 and 404 errors on invalid inputs', async () => {
+  void it('increments streaks across consecutive UTC days and resets after a missed day', async () => {
+    const store = createInMemoryShiftStore();
+    let now = new Date('2026-11-25T05:00:00.000Z');
+    const api = createApiRouter({
+      getNow: () => now,
+      store,
+      getSessionContext: async () => ({
+        postId: 't3_demo',
+        userId: 't2_streaker',
+        username: 'night_owl',
+      }),
+    });
+
+    // Day 1 solve
+    const day1 = await api.request('/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caseId: 'case-01',
+        evidenceId: 'ev-1c',
+        actionId: 'act-1a',
+        startedUtcDate: '2026-11-25',
+        elapsedSeconds: 25,
+      }),
+    });
+    const day1Body: unknown = await day1.json();
+    assert.equal(isEvaluateResponse(day1Body), true);
+    if (isEvaluateResponse(day1Body)) {
+      assert.equal(day1Body.playerStats.currentStreak, 1);
+    }
+
+    // Day 2 solve -> streak = 2
+    now = new Date('2026-11-26T05:00:00.000Z');
+    const day2 = await api.request('/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caseId: 'case-02',
+        evidenceId: 'ev-2c',
+        actionId: 'act-2a',
+        startedUtcDate: '2026-11-26',
+        elapsedSeconds: 30,
+      }),
+    });
+    const day2Body: unknown = await day2.json();
+    assert.equal(isEvaluateResponse(day2Body), true);
+    if (isEvaluateResponse(day2Body)) {
+      assert.equal(day2Body.playerStats.currentStreak, 2);
+      assert.equal(day2Body.playerStats.bestStreak, 2);
+      assert.equal(day2Body.playerStats.totalSolved, 2);
+    }
+
+    // Skip Day 3 -> Day 4 daily fetch shows currentStreak 0 while preserving bestStreak 2
+    now = new Date('2026-11-28T05:00:00.000Z');
+    const day4Daily = await api.request('/daily');
+    const day4Body: unknown = await day4Daily.json();
+    assert.equal(isDailyCaseResponse(day4Body), true);
+    if (isDailyCaseResponse(day4Body)) {
+      assert.equal(day4Body.playerStats.currentStreak, 0);
+      assert.equal(day4Body.playerStats.bestStreak, 2);
+    }
+  });
+
+  void it('POST /share-comment submits spoiler-free comment as user, retries after error, and prevents same-day spam', async () => {
+    const store = createInMemoryShiftStore();
+    let shouldFailPermission = true;
+    const submittedTexts: string[] = [];
+
+    const api = createApiRouter({
+      getNow: () => new Date('2026-11-25T05:00:00.000Z'),
+      store,
+      getSessionContext: async () => ({
+        postId: 't3_demo123',
+        userId: 't2_sharer',
+        username: 'sharer',
+      }),
+      submitUserComment: async (input) => {
+        if (shouldFailPermission) {
+          throw new Error('User declined SUBMIT_COMMENT permission');
+        }
+        submittedTexts.push(input.text);
+        return {
+          commentId: 't1_comment_99',
+          commentUrl: 'https://www.reddit.com/r/night_shift_daily_dev/comments/demo123/comment/99',
+        };
+      },
+    });
+
+    const shareBody = JSON.stringify({
+      caseId: 'case-01',
+      utcDate: '2026-11-25',
+      shiftNumber: 1,
+      rankCode: 'S',
+      elapsedSeconds: 28,
+      evidenceCorrect: true,
+      actionCorrect: true,
+      clearedCount: 3,
+      streak: 2,
+      lang: 'en',
+    });
+
+    // First attempt fails permission -> 403 and does NOT lock out retry
+    const deniedRes = await api.request('/share-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: shareBody,
+    });
+    assert.equal(deniedRes.status, 403);
+    const deniedJson: unknown = await deniedRes.json();
+    assert.equal(isApiErrorResponse(deniedJson), true);
+    if (isApiErrorResponse(deniedJson)) {
+      assert.equal(deniedJson.code, 'PERMISSION_REQUIRED');
+    }
+
+    // User grants permission -> succeeds 200
+    shouldFailPermission = false;
+    const okRes = await api.request('/share-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: shareBody,
+    });
+    assert.equal(okRes.status, 200);
+    const okJson: unknown = await okRes.json();
+    assert.equal(isShareCommentResponse(okJson), true);
+    if (isShareCommentResponse(okJson)) {
+      assert.equal(okJson.commentId, 't1_comment_99');
+      assert.match(okJson.text, /INC-0407/);
+      assert.doesNotMatch(okJson.text, /RFID-B2-DOOR|4419/);
+    }
+    assert.equal(submittedTexts.length, 1);
+
+    // Duplicate same-day post -> 409 ALREADY_SHARED
+    const dupRes = await api.request('/share-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: shareBody,
+    });
+    assert.equal(dupRes.status, 409);
+    const dupJson: unknown = await dupRes.json();
+    assert.equal(isApiErrorResponse(dupJson), true);
+    if (isApiErrorResponse(dupJson)) {
+      assert.equal(dupJson.code, 'ALREADY_SHARED');
+    }
+  });
+
+  void it('POST /evaluate and /share-comment return structured 400 and 404 errors on invalid inputs', async () => {
     const api = createApiRouter({
       getNow: () => new Date('2026-11-25T10:00:00.000Z'),
+      store: createInMemoryShiftStore(),
       getSessionContext: async () => ({
         postId: null,
-        username: 'analyst',
+        userId: null,
+        username: 'guest',
       }),
     });
 
@@ -133,36 +291,26 @@ void describe('Hono API routes', () => {
       assert.equal(malformedBody.code, 'INVALID_PAYLOAD');
     }
 
-    const incompleteRes = await api.request('/evaluate', {
+    const noPostShare = await api.request('/share-comment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         caseId: 'case-01',
-        evidenceId: 'ev-1c',
-        actionId: '',
+        utcDate: '2026-11-25',
+        shiftNumber: 1,
+        rankCode: 'A',
+        elapsedSeconds: 50,
+        evidenceCorrect: true,
+        actionCorrect: true,
+        clearedCount: 2,
+        streak: 1,
       }),
     });
-    assert.equal(incompleteRes.status, 400);
-    const incompleteBody: unknown = await incompleteRes.json();
-    assert.equal(isApiErrorResponse(incompleteBody), true);
-    if (isApiErrorResponse(incompleteBody)) {
-      assert.equal(incompleteBody.code, 'MISSING_SELECTION');
-    }
-
-    const unknownCaseRes = await api.request('/evaluate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        caseId: 'case-unknown',
-        evidenceId: 'ev-1c',
-        actionId: 'act-1a',
-      }),
-    });
-    assert.equal(unknownCaseRes.status, 404);
-    const unknownCaseBody: unknown = await unknownCaseRes.json();
-    assert.equal(isApiErrorResponse(unknownCaseBody), true);
-    if (isApiErrorResponse(unknownCaseBody)) {
-      assert.equal(unknownCaseBody.code, 'UNKNOWN_CASE');
+    assert.equal(noPostShare.status, 400);
+    const noPostBody: unknown = await noPostShare.json();
+    assert.equal(isApiErrorResponse(noPostBody), true);
+    if (isApiErrorResponse(noPostBody)) {
+      assert.equal(noPostBody.code, 'MISSING_POST_CONTEXT');
     }
   });
 });

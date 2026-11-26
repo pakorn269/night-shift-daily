@@ -6,11 +6,19 @@
     "entrypoints": {
       "default": {
         "inline": true,
+        "height": "tall",
         "entry": "splash.html"
       },
       "game": {
         "entry": "game.html"
       }
+    }
+  },
+  "permissions": {
+    "redis": true,
+    "reddit": {
+      "enable": true,
+      "asUser": ["SUBMIT_COMMENT"]
     }
   },
   "server": {

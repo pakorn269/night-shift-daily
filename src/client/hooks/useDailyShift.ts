@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { canRunAsUser, showToast } from '@devvit/web/client';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   isApiErrorResponse,
   isDailyCaseResponse,
   isEvaluateResponse,
+  isShareCommentResponse,
 } from '../../shared/guards.ts';
 import type {
   DailyCaseResponse,
   EvaluateRequest,
   EvaluateResponse,
+  ShareCommentRequest,
 } from '../../shared/types.ts';
+import type { Language } from '../../shared/uiStrings.ts';
 import {
   playBreachSound,
   playBreakerSound,
@@ -27,6 +31,7 @@ export type ShiftStatus =
   | 'error';
 
 export type FeedbackEvent = 'none' | 'contained' | 'breach';
+export type CommentShareStatus = 'idle' | 'posting' | 'posted';
 
 export type DailyShiftState = {
   readonly status: ShiftStatus;
@@ -36,8 +41,11 @@ export type DailyShiftState = {
   readonly selectedActionId: string | null;
   readonly ruledOutIds: readonly string[];
   readonly elapsedSeconds: number;
+  readonly attemptNumber: number;
   readonly evaluation: EvaluateResponse | null;
   readonly feedbackEvent: FeedbackEvent;
+  readonly commentShareStatus: CommentShareStatus;
+  readonly shareErrorMessage: string | null;
   readonly muted: boolean;
   readonly errorMessage: string | null;
 };
@@ -50,8 +58,11 @@ const INITIAL_STATE: DailyShiftState = {
   selectedActionId: null,
   ruledOutIds: [],
   elapsedSeconds: 0,
+  attemptNumber: 1,
   evaluation: null,
   feedbackEvent: 'none',
+  commentShareStatus: 'idle',
+  shareErrorMessage: null,
   muted: false,
   errorMessage: null,
 };
@@ -63,6 +74,14 @@ const buildApiUrl = (path: string): string => {
     return `${path}?date=${encodeURIComponent(dateOverride.trim())}`;
   }
   return path;
+};
+
+const safeToast = (message: string): void => {
+  try {
+    showToast(message);
+  } catch {
+    // Running outside Devvit iframe (e.g., localhost preview).
+  }
 };
 
 const fetchDailyShiftState = async (
@@ -100,13 +119,16 @@ const fetchDailyShiftState = async (
     return {
       status: 'ready',
       session: payload,
-      focusedEvidenceId: payload.incident.evidence[0]?.id ?? null,
+      focusedEvidenceId: payload.incidents.en.evidence[0]?.id ?? null,
       selectedEvidenceId: null,
       selectedActionId: null,
       ruledOutIds: [],
       elapsedSeconds: 0,
+      attemptNumber: payload.playerStats.firstAttemptAttempted ? 2 : 1,
       evaluation: null,
       feedbackEvent: 'none',
+      commentShareStatus: payload.playerStats.sharedToday ? 'posted' : 'idle',
+      shareErrorMessage: null,
       muted,
       errorMessage: null,
     };
@@ -132,13 +154,21 @@ const fetchDailyShiftState = async (
 
 export const useDailyShift = () => {
   const [state, setState] = useState<DailyShiftState>(INITIAL_STATE);
+  const mutedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    mutedRef.current = state.muted;
+  }, [state.muted]);
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
 
     const init = async () => {
-      const nextState = await fetchDailyShiftState(false, controller.signal);
+      const nextState = await fetchDailyShiftState(
+        mutedRef.current,
+        controller.signal
+      );
       if (active) {
         setState(nextState);
       }
@@ -182,119 +212,105 @@ export const useDailyShift = () => {
   }, []);
 
   const loadDailyShift = useCallback(async () => {
-    let isMuted = false;
-    setState((prev) => {
-      isMuted = prev.muted;
-      return {
-        ...prev,
-        status: 'loading',
-        focusedEvidenceId: null,
-        selectedEvidenceId: null,
-        selectedActionId: null,
-        ruledOutIds: [],
-        elapsedSeconds: 0,
-        evaluation: null,
-        feedbackEvent: 'none',
-        errorMessage: null,
-      };
-    });
+    const currentMuted = mutedRef.current;
+    setState((prev) => ({
+      ...prev,
+      status: 'loading',
+      focusedEvidenceId: null,
+      selectedEvidenceId: null,
+      selectedActionId: null,
+      ruledOutIds: [],
+      elapsedSeconds: 0,
+      evaluation: null,
+      feedbackEvent: 'none',
+      shareErrorMessage: null,
+      errorMessage: null,
+    }));
 
-    const nextState = await fetchDailyShiftState(isMuted);
+    const nextState = await fetchDailyShiftState(currentMuted);
     setState(nextState);
   }, []);
 
-  const focusEvidence = useCallback(
-    (evidenceId: string) => {
-      playInspectSound(state.muted);
-      setState((prev) => {
-        if (prev.status !== 'ready' && prev.status !== 'evaluated') {
-          return prev;
-        }
-        return {
-          ...prev,
-          focusedEvidenceId: evidenceId,
-        };
-      });
-    },
-    [state.muted]
-  );
+  const focusEvidence = useCallback((evidenceId: string) => {
+    playInspectSound(mutedRef.current);
+    setState((prev) => {
+      if (prev.status !== 'ready' && prev.status !== 'evaluated') {
+        return prev;
+      }
+      return {
+        ...prev,
+        focusedEvidenceId: evidenceId,
+      };
+    });
+  }, []);
 
-  const selectEvidence = useCallback(
-    (evidenceId: string) => {
-      playFlagSound(state.muted);
-      setState((prev) => {
-        if (prev.status !== 'ready') {
-          return prev;
-        }
-        return {
-          ...prev,
-          focusedEvidenceId: evidenceId,
-          selectedEvidenceId: evidenceId,
-          ruledOutIds: prev.ruledOutIds.filter((id) => id !== evidenceId),
-          errorMessage: null,
-        };
-      });
-    },
-    [state.muted]
-  );
+  const selectEvidence = useCallback((evidenceId: string) => {
+    playFlagSound(mutedRef.current);
+    setState((prev) => {
+      if (prev.status !== 'ready') {
+        return prev;
+      }
+      return {
+        ...prev,
+        focusedEvidenceId: evidenceId,
+        selectedEvidenceId: evidenceId,
+        ruledOutIds: prev.ruledOutIds.filter((id) => id !== evidenceId),
+        errorMessage: null,
+      };
+    });
+  }, []);
 
-  const toggleRuleOut = useCallback(
-    (evidenceId: string) => {
-      playClearSound(state.muted);
-      setState((prev) => {
-        if (prev.status !== 'ready' || !prev.session) {
-          return prev;
-        }
-        const alreadyRuledOut = prev.ruledOutIds.includes(evidenceId);
-        const nextRuledOut = alreadyRuledOut
-          ? prev.ruledOutIds.filter((id) => id !== evidenceId)
-          : [...prev.ruledOutIds, evidenceId];
-        const nextSelected =
-          !alreadyRuledOut && prev.selectedEvidenceId === evidenceId
-            ? null
-            : prev.selectedEvidenceId;
+  const toggleRuleOut = useCallback((evidenceId: string) => {
+    playClearSound(mutedRef.current);
+    setState((prev) => {
+      if (prev.status !== 'ready' || !prev.session) {
+        return prev;
+      }
+      const alreadyRuledOut = prev.ruledOutIds.includes(evidenceId);
+      const nextRuledOut = alreadyRuledOut
+        ? prev.ruledOutIds.filter((id) => id !== evidenceId)
+        : [...prev.ruledOutIds, evidenceId];
+      const nextSelected =
+        !alreadyRuledOut && prev.selectedEvidenceId === evidenceId
+          ? null
+          : prev.selectedEvidenceId;
 
-        let nextFocused = prev.focusedEvidenceId;
-        if (!alreadyRuledOut) {
-          const rows = prev.session.incident.evidence;
-          const currentIndex = rows.findIndex((row) => row.id === evidenceId);
-          for (let offset = 1; offset <= rows.length; offset++) {
-            const candidate = rows[(currentIndex + offset) % rows.length];
-            if (candidate && !nextRuledOut.includes(candidate.id)) {
-              nextFocused = candidate.id;
-              break;
-            }
+      let nextFocused = prev.focusedEvidenceId;
+      if (!alreadyRuledOut) {
+        const rows = prev.session.incidents.en.evidence;
+        const currentIndex = rows.findIndex((row) => row.id === evidenceId);
+        for (let offset = 1; offset <= rows.length; offset++) {
+          const candidate = rows[(currentIndex + offset) % rows.length];
+          if (candidate && !nextRuledOut.includes(candidate.id)) {
+            nextFocused = candidate.id;
+            break;
           }
         }
+      }
 
-        return {
-          ...prev,
-          focusedEvidenceId: nextFocused,
-          selectedEvidenceId: nextSelected,
-          ruledOutIds: nextRuledOut,
-          errorMessage: null,
-        };
-      });
-    },
-    [state.muted]
-  );
+      return {
+        ...prev,
+        focusedEvidenceId: nextFocused,
+        selectedEvidenceId: nextSelected,
+        ruledOutIds: nextRuledOut,
+        errorMessage: null,
+      };
+    });
+  }, []);
 
-  const selectAction = useCallback(
-    (actionId: string) => {
-      playBreakerSound(state.muted);
-      setState((prev) => {
-        if (prev.status !== 'ready') {
-          return prev;
-        }
-        return {
-          ...prev,
-          selectedActionId: actionId,
-          errorMessage: null,
-        };
-      });
-    },
-    [state.muted]
-  );
+  const selectAction = useCallback((actionId: string) => {
+    playBreakerSound(mutedRef.current);
+    setState((prev) => {
+      if (prev.status !== 'ready') {
+        return prev;
+      }
+      return {
+        ...prev,
+        selectedActionId: actionId,
+        errorMessage: null,
+      };
+    });
+  }, []);
 
   const submitVerdict = useCallback(async () => {
     if (
@@ -307,17 +323,21 @@ export const useDailyShift = () => {
     }
 
     const requestBody: EvaluateRequest = {
-      caseId: state.session.incident.id,
+      caseId: state.session.incidents.en.id,
       evidenceId: state.selectedEvidenceId,
       actionId: state.selectedActionId,
       startedUtcDate: state.session.utcDate,
+      elapsedSeconds: state.elapsedSeconds,
+      clearedCount: state.ruledOutIds.length,
+      attemptNumber: state.attemptNumber,
     };
 
-    playTransmitSound(state.muted);
+    playTransmitSound(mutedRef.current);
     setState((prev) => ({
       ...prev,
       status: 'submitting',
       feedbackEvent: 'none',
+      shareErrorMessage: null,
       errorMessage: null,
     }));
 
@@ -329,7 +349,7 @@ export const useDailyShift = () => {
           body: JSON.stringify(requestBody),
         }),
         new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 280);
+          window.setTimeout(resolve, 260);
         }),
       ]);
 
@@ -357,17 +377,27 @@ export const useDailyShift = () => {
       }
 
       if (payload.correct) {
-        playWinSound(state.muted);
+        playWinSound(mutedRef.current);
       } else {
-        playBreachSound(state.muted);
+        playBreachSound(mutedRef.current);
       }
 
       setState((prev) => ({
         ...prev,
         status: 'evaluated',
+        session: prev.session
+          ? {
+              ...prev.session,
+              playerStats: payload.playerStats,
+              communityStats: payload.communityStats,
+            }
+          : prev.session,
         focusedEvidenceId: payload.correctEvidenceId,
         evaluation: payload,
         feedbackEvent: payload.correct ? 'contained' : 'breach',
+        commentShareStatus: payload.playerStats.sharedToday
+          ? 'posted'
+          : prev.commentShareStatus,
         errorMessage: null,
       }));
     } catch (error) {
@@ -382,15 +412,122 @@ export const useDailyShift = () => {
       }));
     }
   }, [
-    state.muted,
+    state.attemptNumber,
+    state.elapsedSeconds,
+    state.ruledOutIds.length,
     state.selectedActionId,
     state.selectedEvidenceId,
     state.session,
     state.status,
   ]);
 
+  const shareToComments = useCallback(
+    async (nativeEvent: Event, lang: Language) => {
+      if (
+        !state.session ||
+        !state.evaluation ||
+        state.commentShareStatus !== 'idle'
+      ) {
+        return;
+      }
+
+      setState((prev) => ({
+        ...prev,
+        commentShareStatus: 'posting',
+        shareErrorMessage: null,
+      }));
+
+      try {
+        // Request Reddit asUser SUBMIT_COMMENT consent when running inside Devvit.
+        let granted = true;
+        try {
+          granted = await canRunAsUser(nativeEvent);
+        } catch {
+          // Allow localhost preview to exercise the server endpoint directly.
+          granted = true;
+        }
+
+        if (!granted) {
+          setState((prev) => ({
+            ...prev,
+            commentShareStatus: 'idle',
+            shareErrorMessage:
+              'Reddit comment permission declined — use Copy Shift Card instead.',
+          }));
+          safeToast('Permission declined — use Copy Shift Card instead.');
+          return;
+        }
+
+        const reqBody: ShareCommentRequest = {
+          caseId: state.evaluation.caseId,
+          utcDate: state.session.utcDate,
+          shiftNumber: state.evaluation.shiftNumber,
+          rankCode: state.evaluation.rankCode,
+          elapsedSeconds: state.evaluation.elapsedSeconds,
+          evidenceCorrect: state.evaluation.evidenceCorrect,
+          actionCorrect: state.evaluation.actionCorrect,
+          clearedCount: state.evaluation.clearedCount,
+          streak: state.evaluation.playerStats.currentStreak,
+          lang,
+        };
+
+        const response = await fetch(buildApiUrl('/api/share-comment'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reqBody),
+        });
+        const payload: unknown = await response.json();
+
+        if (!response.ok) {
+          const code = isApiErrorResponse(payload) ? payload.code : null;
+          const message = isApiErrorResponse(payload)
+            ? payload.message
+            : 'Unable to post shift comment.';
+
+          setState((prev) => ({
+            ...prev,
+            commentShareStatus: code === 'ALREADY_SHARED' ? 'posted' : 'idle',
+            shareErrorMessage: message,
+          }));
+          safeToast(message);
+          return;
+        }
+
+        if (isShareCommentResponse(payload)) {
+          setState((prev) => ({
+            ...prev,
+            commentShareStatus: 'posted',
+            shareErrorMessage: null,
+            session: prev.session
+              ? {
+                  ...prev.session,
+                  playerStats: {
+                    ...prev.session.playerStats,
+                    sharedToday: true,
+                  },
+                }
+              : prev.session,
+          }));
+          safeToast('Shift debrief posted to Reddit comments!');
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Unable to submit shift comment.';
+        setState((prev) => ({
+          ...prev,
+          commentShareStatus: 'idle',
+          shareErrorMessage: message,
+        }));
+        safeToast(message);
+      }
+    },
+    [state.commentShareStatus, state.evaluation, state.session]
+  );
+
   const replayCurrentCase = useCallback(() => {
-    playInspectSound(state.muted);
+    playInspectSound(mutedRef.current);
     setState((prev) => {
       if (!prev.session) {
         return prev;
@@ -398,17 +535,19 @@ export const useDailyShift = () => {
       return {
         ...prev,
         status: 'ready',
-        focusedEvidenceId: prev.session.incident.evidence[0]?.id ?? null,
+        focusedEvidenceId: prev.session.incidents.en.evidence[0]?.id ?? null,
         selectedEvidenceId: null,
         selectedActionId: null,
         ruledOutIds: [],
         elapsedSeconds: 0,
+        attemptNumber: prev.attemptNumber + 1,
         evaluation: null,
         feedbackEvent: 'none',
+        shareErrorMessage: null,
         errorMessage: null,
       };
     });
-  }, [state.muted]);
+  }, []);
 
   return {
     state,
@@ -419,6 +558,7 @@ export const useDailyShift = () => {
     toggleRuleOut,
     selectAction,
     submitVerdict,
+    shareToComments,
     replayCurrentCase,
   };
 };
