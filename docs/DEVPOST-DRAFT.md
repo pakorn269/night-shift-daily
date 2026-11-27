@@ -10,6 +10,7 @@
 | **Submission Type** | Solo |
 | **Devvit CLI / SDK Version** | `@devvit/cli/0.15.4`, `@devvit/web/0.15.4` (App version `0.2.0`) |
 | **Reddit Username** | `u/pakorn269` |
+| **Public Repository URL** | `https://github.com/pakorn269/night-shift-daily` |
 | **Devvit App Listing URL** | `https://developers.reddit.com/apps/night-shift-daily` |
 | **Public Test Subreddit (<200 members)** | `https://www.reddit.com/r/night_shift_daily_dev/` *(Public, custom Halcyon Desk pixel-art icon/banner)* |
 | **Direct Playable Demo Post URL** | `https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/` |

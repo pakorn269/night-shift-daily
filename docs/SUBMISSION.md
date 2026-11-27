@@ -15,8 +15,8 @@
 ## Devpost package
 
 - [x] Prepare the English project description, spoiler-free judge instructions, and recommended port/non-port answer in [docs/DEVPOST-DRAFT.md](DEVPOST-DRAFT.md).
-- [x] Record `u/pakorn269`, `https://developers.reddit.com/apps/night-shift-daily`, `https://www.reddit.com/r/night_shift_daily_dev/`, and `https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/` in [docs/DEVPOST-DRAFT.md](DEVPOST-DRAFT.md).
-- [ ] Record an optional 45–60s demo video with Web Audio SFX enabled showcasing the animated CCTV canvas, lockdown/breach payoffs, consensus stats, and Reddit comment handover.
+- [x] Record `u/pakorn269`, `https://github.com/pakorn269/night-shift-daily`, `https://developers.reddit.com/apps/night-shift-daily`, `https://www.reddit.com/r/night_shift_daily_dev/`, and `https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/` in [docs/DEVPOST-DRAFT.md](DEVPOST-DRAFT.md).
+- [x] Recorded 54.8s 720p demo video with Google Cloud Chirp 3: HD narration and 15 procedural Web Audio SFX cues (`demo/night-shift-daily-demo.mp4`, `demo/night-shift-daily-demo.srt`, `demo/youtube-thumbnail.png`, `demo/Youtube-Details.md`).
 - [ ] Show the final package to the entrant and get explicit approval before submitting. Verify the submitted state on Devpost afterward.
 
 Official references: [event and submission instructions](https://redditgameofday2026.devpost.com/) · [official rules](https://redditgameofday2026.devpost.com/rules) · [Devvit quickstart](https://developers.reddit.com/docs/quickstart#running-your-app).

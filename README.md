@@ -14,7 +14,7 @@
   - **Reddit-native community loop (zero lockouts):** Devvit Redis tracks each player's **Attempt #1** toward their **Daily Streak** and **First-Shift Community Consensus** (% contained & breaker vote bars), while keeping **Replay This Shift** completely unlocked (`PRACTICE REPLAY` badge) so judges can test both winning and failing outcomes freely.
   - **One-click Spoiler-Free Sharing & Next-Shift Countdown:** Players can post a spoiler-free Rank + Streak shift debrief directly to the Reddit post's comment thread (`asUser: ["SUBMIT_COMMENT"]` with 1/day anti-spam protection) or copy/share via `showShareSheet`/clipboard, alongside a live `NEXT SHIFT IN HH:MM:SS` countdown.
   - **Zero-scroll responsive console:** Single-row mobile header (`390×844`), 2-column desktop security console (`1280×800`), crisp DOM camera HUD & live `whisper` telemetry strip, and procedural Web Audio CRT SFX (`[SFX ON/OFF]`).
-- Docs: [M1 checkpoint](docs/MILESTONE-1.md) · [submission checklist](docs/SUBMISSION.md) · [Devpost draft](docs/DEVPOST-DRAFT.md).
+- Docs: [M1 checkpoint](docs/MILESTONE-1.md) · [submission checklist](docs/SUBMISSION.md) · [Devpost draft](docs/DEVPOST-DRAFT.md) · [GitHub repository](https://github.com/pakorn269/night-shift-daily).
 
 ## Game loop
 
