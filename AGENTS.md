@@ -4,13 +4,14 @@ You are writing a Devvit web application that will be executed on Reddit.com.
 
 - **Frontend**: React 19, Tailwind CSS 4, Vite
 - **Backend**: Node.js serverless environment (Devvit), Hono REST API
-- **Communication**: Typed JSON REST endpoints (`/api/daily`, `/api/evaluate`) backed by shared TypeScript contracts and runtime type guards in `/src/shared`
+- **Communication**: Typed JSON REST endpoints (`/api/daily`, `/api/case/:caseId`, `/api/evaluate`, `/api/share-comment`) backed by shared TypeScript contracts and runtime type guards in `/src/shared`
 
 ## Layout & Architecture
 
 - `/src/server`: **Backend Code**. This runs in a secure, serverless environment.
   - `index.ts`: Main server entry point (Hono app mounting `/api` and `/internal`).
-  - `routes/api.ts`: Hono REST routes (`GET /api/daily`, `POST /api/evaluate`). Currently stateless (no Redis) with deterministic UTC date rotation and unlimited retries.
+  - `routes/api.ts`: Hono REST routes (`GET /api/daily`, `GET /api/case/:caseId`, `POST /api/evaluate`, `POST /api/share-comment`) backed by Devvit Redis (`core/store.ts`) for atomic first-attempt streaks, First-Shift Community Consensus, and isolated 9-case Archive Mode.
+  - `data/cases.ts`, `data/casesTh.ts`, `core/engine.ts`: Strictly server-only 9-case catalog, solutions, Thai debriefs, and evaluation engine (never import from `/src/client`).
   - `routes/menu.ts` and `routes/triggers.ts`: Moderator post creation and install trigger handlers.
   - Access `reddit` and `context` here via `@devvit/web/server`.
 - `/src/client`: **Frontend Code**. This is executed inside of an iFrame on reddit.com
@@ -21,9 +22,9 @@ You are writing a Devvit web application that will be executed on Reddit.com.
   - Modules:
     - `canvas/sceneRenderer.ts`: 60 FPS `360×210` retro-pixel HTML5 2D `<canvas>` CCTV renderer with clickable hotspots and win/breach payoff animations.
     - `audio/sfx.ts`: Procedural Web Audio API CRT sound cues gated by `[SFX ON/OFF]`.
-    - `components/`: `SplashView.tsx`, `GameView.tsx`, `SecurityMonitorCanvas.tsx`, `ClueDeck.tsx`, `ActionSelector.tsx`, `VerdictPanel.tsx`, and `LanguageSwitcher.tsx`.
+    - `components/`: `SplashView.tsx`, `GameView.tsx`, `SecurityMonitorCanvas.tsx`, `ClueDeck.tsx`, `ActionSelector.tsx`, `VerdictPanel.tsx`, `ArchiveDrawer.tsx`, and `LanguageSwitcher.tsx`.
     - `hooks/`: `useDailyShift.ts` (shift state, stopwatch, distractor clearing, rollover check) and `useLanguage.ts` (`EN | ไทย` persistence).
-- `/src/shared`: **Shared Code**. Shared contracts (`types.ts`), runtime guards (`guards.ts`), authored cases (`cases.ts`), pure deterministic engine (`engine.ts`), and English/Thai localization (`i18n.ts`, `DEFAULT_LANGUAGE = 'en'`).
+- `/src/shared`: **Shared Code**. Wire contracts (`types.ts`), runtime guards (`guards.ts`), UI strings (`uiStrings.ts`, `DEFAULT_LANGUAGE = 'en'`), and spoiler-free share formatting (`shareFormat.ts`). Never place case solutions here.
 - `/tools`: **Build & Local Preview**. `tsconfig.base.json` (`rewriteRelativeImportExtensions: true` for Node native TypeScript execution) and `local-preview.ts` (standalone localhost Hono + static `dist/client` preview server).
 
 ## Frontend

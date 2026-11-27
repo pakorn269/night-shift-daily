@@ -4,7 +4,8 @@ description: >-
   Project runbook for Night Shift Daily on Reddit Devvit Web. Use when adding or editing
   daily Halcyon Desk cases, Thai translations, animated CCTV canvas scenes, Web Audio SFX,
   Hono REST endpoints, Devvit Redis streaks/consensus, comment sharing, localhost preview
-  tests, or private Devvit uploads and subreddit setup.
+  tests, private Devvit uploads and subreddit setup, demo video/thumbnail production,
+  README visual assets, or Dependabot PR triage.
 ---
 
 # Night Shift Daily — Devvit Web Runbook
@@ -54,7 +55,7 @@ npm run test:types; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npm run lint; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npm run test:unit; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-Select-String -Path "dist\client\*.js" -Pattern "wrongActionFeedback|evidenceExplanation|solution:"
+Select-String -Path "dist\client\*.js" -Pattern "wrongActionFeedback|solution:|INC-0407|INC-0412"
 ```
 
 Preview and browser-test locally before uploading to Reddit:
@@ -77,3 +78,17 @@ npm run preview:local
 - **NEVER run `npm run launch` or `devvit publish`:** App directory publishing/review is not required for Reddit's Game of the Day Hackathon judging.
 - **Protect `package-lock.json`:** `devvit upload` can strip optional Linux/macOS `@esbuild/*` entries on Windows. If `package.json` dependencies did not change, run `git checkout -- package-lock.json` before committing.
 - **Honest verification:** Localhost preview QA supplements, and never replaces, live Reddit expanded-view, Redis persistence, `asUser` comment consent, and separate non-moderator account verification.
+
+## 5. Demo Video, Thumbnails & README Visuals (`scripts/record-demo.py`)
+
+- **Run producer:** `python scripts/record-demo.py` generates gitignored `demo/night-shift-daily-demo.mp4`, `demo/night-shift-daily-demo.srt`, and `demo/youtube-thumbnail.png` using Google Cloud Chirp 3: HD narration (keys loaded at runtime from `.env.local` or `GOOGLE_TTS_ENV_FILE` — never print secrets) and 15 sample-accurate procedural SFX cues matching `src/client/audio/sfx.ts`.
+- **Full-bleed hero thumbnails:** Capture the tight console container (`page.locator(".hd-console-shell").first.screenshot(...)`) **before** injecting synthetic cursor/chapter overlays, and fit edge-to-edge into the thumbnail frame with `PIL.ImageOps.fit(..., Image.Resampling.LANCZOS)` so there are no dark viewport margins.
+- **PIL font glyph safety (Windows):** `segoeui.ttf` lacks Thai glyphs and renders `ไทย` as `□□□` tofu boxes. Use ASCII English (`English & Thai`) on PIL-rendered intro/outro cards (or load `LeelawUI.ttf`). Always visually inspect generated PNGs and spot-check MP4 frames before handoff.
+- **Playwright on Windows:** Fall back from `headless=True` to `channel="chrome"` / `channel="msedge"`, and ensure `python -m playwright install ffmpeg` is installed for `record_video_dir`.
+- **Visual-first `README.md`:** Keep `docs/assets/hero.png` (clickable to the live Reddit post) and `docs/assets/gameplay-preview.gif` (linked to the YouTube demo) at the top of `README.md` so visitors immediately see the animated 60 FPS CCTV console.
+
+## 6. Public Release & Dependabot PR Triage (PowerShell 5.1)
+
+- **Inspect PRs in PowerShell:** Use `gh pr list --json number,title,statusCheckRollup | ConvertFrom-Json` instead of complex single-quoted `--jq` filters, and pass `--comment '...'` in single quotes so `<` / `>` characters are not parsed as redirection operators.
+- **Resolve lockfile conflicts cleanly:** Merge non-conflicting passing PRs first, then apply remaining passing dependency bumps together via `npm install` on `main`, run `test:types`, `lint`, `test:unit`, and `build`, push, and close superseded Dependabot PRs.
+- **Known peer guard:** Hold `typescript@7.x` updates until `typescript-eslint` widens its `peer typescript@">=4.8.4 <6.1.0"` constraint.
