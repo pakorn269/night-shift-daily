@@ -4,7 +4,7 @@
 
 [![Night Shift Daily — Halcyon Desk Incident Console](docs/assets/hero.png)](https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/)
 
-**[▶ Play Live on Reddit (`r/night_shift_daily_dev`)](https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/)** · **[🎬 Watch 55s Demo Video (SFX ON)](https://youtu.be/lph1hQL5tHE)** · **[r/GamesOnReddit Thread](https://www.reddit.com/r/GamesOnReddit/comments/1y6hjta/night_shift_daily_60s_midnight_it_horror/)** · **[Devpost Draft](docs/DEVPOST-DRAFT.md)** · **[Submission Checklist](docs/SUBMISSION.md)**
+**[▶ Play Live on Reddit (`r/night_shift_daily_dev`)](https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/)** · **[🎬 Watch 55s Demo Video (SFX ON)](https://youtu.be/lph1hQL5tHE)** · **[🏆 Devpost Submission](https://devpost.com/software/night-shift-daily)** · **[r/GamesOnReddit Thread](https://www.reddit.com/r/GamesOnReddit/comments/1y6hjta/night_shift_daily_60s_midnight_it_horror/)**
 
 **Night Shift Daily** takes place in the fictional *Halcyon Desk* ITSM universe of [Night Shift Help Desk](https://github.com/pakorn269/night-shift-help-desk). Built from scratch for **Reddit Devvit Web**, it turns a Reddit post into an animated 60 FPS pixel-art CCTV security terminal with daily streaks, first-shift community consensus, and 1-click spoiler-free comment handovers.
 
@@ -16,7 +16,7 @@
 
 ## Status
 
-- [Reddit's Game of the Day Hackathon 2026](https://redditgameofday2026.devpost.com/): registered solo; game not submitted yet.
+- [Reddit's Game of the Day Hackathon 2026](https://redditgameofday2026.devpost.com/): **Submitted** ([Devpost project page](https://devpost.com/software/night-shift-daily), Submission ID `#1321975`).
 - Official submission deadline: **December 9, 2026, 09:00 ICT** (December 8, 18:00 PST / December 9, 02:00 UTC).
 - Current implementation (`v0.2.0` uploaded privately under `u/pakorn269` and installed in Public `r/night_shift_daily_dev`):
   - **9 distinct authored fictional *Halcyon Desk* cases** (`INC-0407` through `INC-0461`) across **5 modular 60 FPS pixel-art CCTV cutaway templates** (`annex-cutaway`, `pbx-vlan`, `tape-vault`, `server-rack`, `hvac-power`), playable both as **Today's Official Daily Shift** (00:00 UTC rotation) and via the built-in **Multi-Round Case Archive** (`CASES X/9` drawer & `Play Next Archive Shift →`), with full **English + Thai (`EN | ไทย`)** localization.
