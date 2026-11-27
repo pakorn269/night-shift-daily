@@ -1,6 +1,7 @@
 import type {
   ApiErrorCode,
   ApiErrorResponse,
+  ArchiveCatalogItem,
   CommunityStats,
   ContainmentAction,
   DailyCaseResponse,
@@ -12,6 +13,7 @@ import type {
   RankCode,
   SceneTemplateId,
   ShareCommentResponse,
+  ShiftMode,
 } from './types.ts';
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -59,6 +61,10 @@ export const isRankCode = (value: unknown): value is RankCode => {
     value === 'C' ||
     value === 'F'
   );
+};
+
+export const isShiftMode = (value: unknown): value is ShiftMode => {
+  return value === 'daily' || value === 'archive';
 };
 
 const isEvidenceRow = (value: unknown): value is EvidenceRow => {
@@ -117,11 +123,30 @@ const isPublicCase = (value: unknown): value is PublicCase => {
   );
 };
 
+const isArchiveCatalogItem = (value: unknown): value is ArchiveCatalogItem => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isString(value['id']) &&
+    isNumber(value['caseNumber']) &&
+    isString(value['incidentCode']) &&
+    isString(value['titleEn']) &&
+    isString(value['titleTh']) &&
+    isString(value['categoryEn']) &&
+    isString(value['categoryTh']) &&
+    isSceneTemplateId(value['sceneTemplate']) &&
+    isBoolean(value['isDailyToday']) &&
+    isBoolean(value['solved'])
+  );
+};
+
 const isPlayerStats = (value: unknown): value is PlayerStats => {
   if (!isRecord(value)) {
     return false;
   }
   const firstRank = value['firstAttemptRank'];
+  const solvedCaseIds = value['solvedCaseIds'];
   return (
     isNumber(value['currentStreak']) &&
     isNumber(value['bestStreak']) &&
@@ -129,7 +154,9 @@ const isPlayerStats = (value: unknown): value is PlayerStats => {
     isBoolean(value['solvedToday']) &&
     isBoolean(value['firstAttemptAttempted']) &&
     (firstRank === null || isRankCode(firstRank)) &&
-    isBoolean(value['sharedToday'])
+    isBoolean(value['sharedToday']) &&
+    Array.isArray(solvedCaseIds) &&
+    solvedCaseIds.every(isString)
   );
 };
 
@@ -169,11 +196,14 @@ export const isDailyCaseResponse = (
   }
   const postId = value['postId'];
   const incidents = value['incidents'];
-  if (!isRecord(incidents)) {
+  const archiveCatalog = value['archiveCatalog'];
+  if (!isRecord(incidents) || !Array.isArray(archiveCatalog)) {
     return false;
   }
   return (
     value['type'] === 'daily' &&
+    isShiftMode(value['mode']) &&
+    isString(value['dailyCaseId']) &&
     isString(value['utcDate']) &&
     isNumber(value['shiftNumber']) &&
     isNumber(value['totalCases']) &&
@@ -182,6 +212,7 @@ export const isDailyCaseResponse = (
     (postId === null || isString(postId)) &&
     isPublicCase(incidents['en']) &&
     isPublicCase(incidents['th']) &&
+    archiveCatalog.every(isArchiveCatalogItem) &&
     isPlayerStats(value['playerStats']) &&
     isCommunityStats(value['communityStats'])
   );
@@ -194,11 +225,13 @@ export const isEvaluateResponse = (
     return false;
   }
   const localized = value['localized'];
+  const nextArchiveCaseId = value['nextArchiveCaseId'];
   if (!isRecord(localized)) {
     return false;
   }
   return (
     value['type'] === 'evaluation' &&
+    isShiftMode(value['mode']) &&
     isString(value['caseId']) &&
     isString(value['incidentCode']) &&
     isNumber(value['shiftNumber']) &&
@@ -221,6 +254,7 @@ export const isEvaluateResponse = (
     isEvaluationCopy(localized['th']) &&
     isString(value['currentUtcDate']) &&
     isBoolean(value['newShiftAvailable']) &&
+    (nextArchiveCaseId === null || isString(nextArchiveCaseId)) &&
     isPlayerStats(value['playerStats']) &&
     isCommunityStats(value['communityStats'])
   );

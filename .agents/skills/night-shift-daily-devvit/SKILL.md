@@ -18,7 +18,7 @@ description: >-
 - **Devvit Permissions & Persistence:**
   - `devvit.json` enables `"redis": true` and `"reddit": { "enable": true, "asUser": ["SUBMIT_COMMENT"] }`.
   - `src/server/core/store.ts` uses atomic `hSetNX` so only Attempt #1 per UTC day counts toward streaks and First-Shift Community Consensus; `Replay This Shift` remains unlocked (`PRACTICE REPLAY`) with no user lockout.
-  - Hono REST API in `src/server/routes/api.ts`: `GET /api/daily`, `POST /api/evaluate`, `POST /api/share-comment`.
+  - Hono REST API in `src/server/routes/api.ts`: `GET /api/daily`, `GET /api/case/:caseId` (multi-round archive mode isolated from daily streak/consensus), `POST /api/evaluate`, `POST /api/share-comment`.
 - **TypeScript Rules:**
   - Prefer `type` aliases over `interface` and named exports over default exports.
   - **Never cast TypeScript types** (`as ...`). Validate external/JSON payloads and `t3_` post IDs with runtime type guards.

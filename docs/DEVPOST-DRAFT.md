@@ -1,6 +1,6 @@
 # Devpost Submission Draft — Night Shift Daily
 
-> **Status:** Upgraded build (`v0.1.0`) privately uploaded and installed in Public `r/night_shift_daily_dev`; awaiting live Reddit non-moderator playtest and explicit owner approval before submitting to Devpost.
+> **Status:** Upgraded build (`v0.2.0`) privately uploaded and installed in Public `r/night_shift_daily_dev` with Multi-Round Case Archive (`GET /api/case/:caseId`, `CASES X/9` queue, `Play Next Archive Shift →`); awaiting live Reddit non-moderator playtest and explicit owner approval before submitting to Devpost.
 
 ## Event & Links
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | **Event** | Reddit's Game of the Day Hackathon 2026 |
 | **Submission Type** | Solo |
-| **Devvit CLI / SDK Version** | `@devvit/cli/0.15.4`, `@devvit/web/0.15.4` (App version `0.1.0`) |
+| **Devvit CLI / SDK Version** | `@devvit/cli/0.15.4`, `@devvit/web/0.15.4` (App version `0.2.0`) |
 | **Reddit Username** | `u/pakorn269` |
 | **Devvit App Listing URL** | `https://developers.reddit.com/apps/night-shift-daily` |
 | **Public Test Subreddit (<200 members)** | `https://www.reddit.com/r/night_shift_daily_dev/` *(Public, custom Halcyon Desk pixel-art icon/banner)* |

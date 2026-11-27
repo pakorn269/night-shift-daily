@@ -1,22 +1,29 @@
 import { Hono } from 'hono';
 import { context, reddit, redis } from '@devvit/web/server';
-import { isRankCode, isRecord } from '../../shared/guards.ts';
+import { isRankCode, isRecord, isShiftMode } from '../../shared/guards.ts';
 import { formatShiftShareText } from '../../shared/shareFormat.ts';
 import type {
   ApiErrorResponse,
+  ArchiveCatalogItem,
   DailyCaseResponse,
   EvaluateResponse,
   ShareCommentResponse,
+  ShiftMode,
 } from '../../shared/types.ts';
 import type { Language } from '../../shared/uiStrings.ts';
-import { getCaseById } from '../data/cases.ts';
+import { DAILY_CASES, getCaseById, toPublicCase } from '../data/cases.ts';
+import { localizeCaseTh } from '../data/casesTh.ts';
 import {
   evaluateSubmission,
   formatUtcDate,
   selectDailyCase,
   toLocalizedPublicCases,
 } from '../core/engine.ts';
-import { createRedisShiftStore, type ShiftStore } from '../core/store.ts';
+import {
+  createRedisShiftStore,
+  EMPTY_COMMUNITY_STATS,
+  type ShiftStore,
+} from '../core/store.ts';
 
 export type SessionContext = {
   readonly postId: string | null;
@@ -45,6 +52,53 @@ export type ApiDeps = {
 
 const isT3PostId = (value: string): value is `t3_${string}` => {
   return value.startsWith('t3_') && value.length > 3;
+};
+
+const buildArchiveCatalog = (
+  dailyCaseId: string,
+  solvedCaseIds: readonly string[]
+): ArchiveCatalogItem[] => {
+  const solvedSet = new Set(solvedCaseIds);
+  return DAILY_CASES.map((item) => {
+    const publicEn = toPublicCase(item);
+    const publicTh = localizeCaseTh(publicEn);
+    return {
+      id: item.id,
+      caseNumber: item.caseNumber,
+      incidentCode: item.incidentCode,
+      titleEn: publicEn.title,
+      titleTh: publicTh.title,
+      categoryEn: publicEn.category,
+      categoryTh: publicTh.category,
+      sceneTemplate: item.sceneTemplate,
+      isDailyToday: item.id === dailyCaseId,
+      solved: solvedSet.has(item.id),
+    };
+  });
+};
+
+const pickNextArchiveCaseId = (
+  currentCaseId: string,
+  solvedCaseIds: readonly string[]
+): string | null => {
+  if (DAILY_CASES.length <= 1) {
+    return null;
+  }
+  const currentIdx = DAILY_CASES.findIndex((item) => item.id === currentCaseId);
+  const startIdx = currentIdx >= 0 ? currentIdx : 0;
+  const solvedSet = new Set(solvedCaseIds);
+
+  // First prefer the next unsolved case in rotation order
+  for (let offset = 1; offset < DAILY_CASES.length; offset++) {
+    const candidate = DAILY_CASES[(startIdx + offset) % DAILY_CASES.length];
+    if (candidate && !solvedSet.has(candidate.id)) {
+      return candidate.id;
+    }
+  }
+
+  // If all 9 cases are already solved, advance sequentially to the next case
+  const nextSeq = DAILY_CASES[(startIdx + 1) % DAILY_CASES.length];
+  return nextSeq ? nextSeq.id : null;
 };
 
 const resolveDefaultSessionContext = async (): Promise<SessionContext> => {
@@ -102,6 +156,8 @@ export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
       return c.json<DailyCaseResponse>(
         {
           type: 'daily',
+          mode: 'daily',
+          dailyCaseId: selection.authoredCase.id,
           utcDate: selection.utcDate,
           shiftNumber: selection.shiftNumber,
           totalCases: selection.totalCases,
@@ -109,6 +165,10 @@ export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
           username: session.username,
           postId: session.postId,
           incidents: toLocalizedPublicCases(selection.authoredCase),
+          archiveCatalog: buildArchiveCatalog(
+            selection.authoredCase.id,
+            snapshot.playerStats.solvedCaseIds
+          ),
           playerStats: snapshot.playerStats,
           communityStats: snapshot.communityStats,
         },
@@ -121,6 +181,69 @@ export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
           status: 'error',
           code: 'INTERNAL_ERROR',
           message: 'Unable to load the daily shift incident.',
+        },
+        500
+      );
+    }
+  });
+
+  router.get('/case/:caseId', async (c) => {
+    try {
+      const requestedId = c.req.param('caseId').trim();
+      const authored = getCaseById(requestedId);
+      if (!authored) {
+        return c.json<ApiErrorResponse>(
+          {
+            status: 'error',
+            code: 'UNKNOWN_CASE',
+            message: `Unknown caseId: ${requestedId}`,
+          },
+          404
+        );
+      }
+
+      const selection = selectDailyCase(getNow());
+      const session = await getSessionContext();
+      const snapshot = await store.getDailySnapshot(
+        selection.utcDate,
+        session.userId
+      );
+
+      const isTodayDaily = authored.id === selection.authoredCase.id;
+      const mode: ShiftMode = isTodayDaily ? 'daily' : 'archive';
+
+      return c.json<DailyCaseResponse>(
+        {
+          type: 'daily',
+          mode,
+          dailyCaseId: selection.authoredCase.id,
+          utcDate: selection.utcDate,
+          shiftNumber: isTodayDaily
+            ? selection.shiftNumber
+            : authored.caseNumber,
+          totalCases: selection.totalCases,
+          nextRolloverUtc: selection.nextRolloverUtc,
+          username: session.username,
+          postId: session.postId,
+          incidents: toLocalizedPublicCases(authored),
+          archiveCatalog: buildArchiveCatalog(
+            selection.authoredCase.id,
+            snapshot.playerStats.solvedCaseIds
+          ),
+          playerStats: snapshot.playerStats,
+          communityStats: isTodayDaily
+            ? snapshot.communityStats
+            : EMPTY_COMMUNITY_STATS,
+        },
+        200
+      );
+    } catch (error) {
+      console.error('API /case/:caseId failed:', error);
+      return c.json<ApiErrorResponse>(
+        {
+          status: 'error',
+          code: 'INTERNAL_ERROR',
+          message: 'Unable to load the requested archive case.',
         },
         500
       );
@@ -179,9 +302,57 @@ export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
       );
     }
 
+    const requestedMode: ShiftMode = isShiftMode(rawBody['mode'])
+      ? rawBody['mode']
+      : 'daily';
     const session = await getSessionContext();
+
+    if (requestedMode === 'archive') {
+      const playerStats = await store.recordArchiveAttempt({
+        utcDate: outcome.result.currentUtcDate,
+        caseId: outcome.result.caseId,
+        userId: session.userId,
+        correct: outcome.result.correct,
+      });
+
+      const response: EvaluateResponse = {
+        type: 'evaluation',
+        mode: 'archive',
+        caseId: outcome.result.caseId,
+        incidentCode: outcome.result.incidentCode,
+        shiftNumber: outcome.result.shiftNumber,
+        correct: outcome.result.correct,
+        evidenceCorrect: outcome.result.evidenceCorrect,
+        actionCorrect: outcome.result.actionCorrect,
+        rankCode: outcome.result.rankCode,
+        elapsedSeconds: outcome.result.elapsedSeconds,
+        clearedCount: outcome.result.clearedCount,
+        isFirstAttempt: false,
+        attemptNumber: outcome.result.attemptNumber,
+        selectedEvidenceId: outcome.result.selectedEvidenceId,
+        selectedEvidenceSource: outcome.result.selectedEvidenceSource,
+        selectedActionId: outcome.result.selectedActionId,
+        correctEvidenceId: outcome.result.correctEvidenceId,
+        correctActionId: outcome.result.correctActionId,
+        correctEvidenceSource: outcome.result.correctEvidenceSource,
+        correctEvidenceTimestamp: outcome.result.correctEvidenceTimestamp,
+        localized: outcome.result.localized,
+        currentUtcDate: outcome.result.currentUtcDate,
+        newShiftAvailable: false,
+        nextArchiveCaseId: pickNextArchiveCaseId(
+          outcome.result.caseId,
+          playerStats.solvedCaseIds
+        ),
+        playerStats,
+        communityStats: EMPTY_COMMUNITY_STATS,
+      };
+
+      return c.json<EvaluateResponse>(response, 200);
+    }
+
     const persisted = await store.recordAttempt({
       utcDate: outcome.result.startedUtcDate,
+      caseId: outcome.result.caseId,
       userId: session.userId,
       correct: outcome.result.correct,
       evidenceCorrect: outcome.result.evidenceCorrect,
@@ -193,6 +364,7 @@ export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
 
     const response: EvaluateResponse = {
       type: 'evaluation',
+      mode: 'daily',
       caseId: outcome.result.caseId,
       incidentCode: outcome.result.incidentCode,
       shiftNumber: outcome.result.shiftNumber,
@@ -214,6 +386,10 @@ export const createApiRouter = (deps?: Partial<ApiDeps>): Hono => {
       localized: outcome.result.localized,
       currentUtcDate: outcome.result.currentUtcDate,
       newShiftAvailable: outcome.result.newShiftAvailable,
+      nextArchiveCaseId: pickNextArchiveCaseId(
+        outcome.result.caseId,
+        persisted.playerStats.solvedCaseIds
+      ),
       playerStats: persisted.playerStats,
       communityStats: persisted.communityStats,
     };

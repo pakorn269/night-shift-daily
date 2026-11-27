@@ -84,13 +84,14 @@ const safeToast = (message: string): void => {
   }
 };
 
-const fetchDailyShiftState = async (
+const fetchShiftState = async (
+  endpointPath: string,
   muted: boolean,
   signal?: AbortSignal
 ): Promise<DailyShiftState> => {
   try {
     const response = await fetch(
-      buildApiUrl('/api/daily'),
+      buildApiUrl(endpointPath),
       signal ? { signal } : undefined
     );
     const payload: unknown = await response.json();
@@ -98,7 +99,7 @@ const fetchDailyShiftState = async (
     if (!response.ok) {
       const message = isApiErrorResponse(payload)
         ? payload.message
-        : `Failed to load today's ticket (HTTP ${response.status}).`;
+        : `Failed to load shift ticket (HTTP ${response.status}).`;
       return {
         ...INITIAL_STATE,
         muted,
@@ -124,7 +125,10 @@ const fetchDailyShiftState = async (
       selectedActionId: null,
       ruledOutIds: [],
       elapsedSeconds: 0,
-      attemptNumber: payload.playerStats.firstAttemptAttempted ? 2 : 1,
+      attemptNumber:
+        payload.mode === 'daily' && payload.playerStats.firstAttemptAttempted
+          ? 2
+          : 1,
       evaluation: null,
       feedbackEvent: 'none',
       commentShareStatus: payload.playerStats.sharedToday ? 'posted' : 'idle',
@@ -165,7 +169,8 @@ export const useDailyShift = () => {
     let active = true;
 
     const init = async () => {
-      const nextState = await fetchDailyShiftState(
+      const nextState = await fetchShiftState(
+        '/api/daily',
         mutedRef.current,
         controller.signal
       );
@@ -211,8 +216,9 @@ export const useDailyShift = () => {
     }));
   }, []);
 
-  const loadDailyShift = useCallback(async () => {
+  const loadEndpoint = useCallback(async (endpointPath: string) => {
     const currentMuted = mutedRef.current;
+    playInspectSound(currentMuted);
     setState((prev) => ({
       ...prev,
       status: 'loading',
@@ -227,9 +233,20 @@ export const useDailyShift = () => {
       errorMessage: null,
     }));
 
-    const nextState = await fetchDailyShiftState(currentMuted);
+    const nextState = await fetchShiftState(endpointPath, currentMuted);
     setState(nextState);
   }, []);
+
+  const loadDailyShift = useCallback(async () => {
+    await loadEndpoint('/api/daily');
+  }, [loadEndpoint]);
+
+  const loadCaseById = useCallback(
+    async (caseId: string) => {
+      await loadEndpoint(`/api/case/${encodeURIComponent(caseId)}`);
+    },
+    [loadEndpoint]
+  );
 
   const focusEvidence = useCallback((evidenceId: string) => {
     playInspectSound(mutedRef.current);
@@ -326,6 +343,7 @@ export const useDailyShift = () => {
       caseId: state.session.incidents.en.id,
       evidenceId: state.selectedEvidenceId,
       actionId: state.selectedActionId,
+      mode: state.session.mode,
       startedUtcDate: state.session.utcDate,
       elapsedSeconds: state.elapsedSeconds,
       clearedCount: state.ruledOutIds.length,
@@ -382,6 +400,7 @@ export const useDailyShift = () => {
         playBreachSound(mutedRef.current);
       }
 
+      const solvedSet = new Set(payload.playerStats.solvedCaseIds);
       setState((prev) => ({
         ...prev,
         status: 'evaluated',
@@ -389,7 +408,14 @@ export const useDailyShift = () => {
           ? {
               ...prev.session,
               playerStats: payload.playerStats,
-              communityStats: payload.communityStats,
+              communityStats:
+                payload.mode === 'daily'
+                  ? payload.communityStats
+                  : prev.session.communityStats,
+              archiveCatalog: prev.session.archiveCatalog.map((item) => ({
+                ...item,
+                solved: solvedSet.has(item.id),
+              })),
             }
           : prev.session,
         focusedEvidenceId: payload.correctEvidenceId,
@@ -438,12 +464,10 @@ export const useDailyShift = () => {
       }));
 
       try {
-        // Request Reddit asUser SUBMIT_COMMENT consent when running inside Devvit.
         let granted = true;
         try {
           granted = await canRunAsUser(nativeEvent);
         } catch {
-          // Allow localhost preview to exercise the server endpoint directly.
           granted = true;
         }
 
@@ -553,6 +577,7 @@ export const useDailyShift = () => {
     state,
     toggleMute,
     loadDailyShift,
+    loadCaseById,
     focusEvidence,
     selectEvidence,
     toggleRuleOut,

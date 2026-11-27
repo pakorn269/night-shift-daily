@@ -19,6 +19,7 @@ export type RedisLike = {
 
 export type RecordAttemptInput = {
   readonly utcDate: string;
+  readonly caseId: string;
   readonly userId: string | null;
   readonly correct: boolean;
   readonly evidenceCorrect: boolean;
@@ -26,6 +27,13 @@ export type RecordAttemptInput = {
   readonly evidenceId: string;
   readonly actionId: string;
   readonly rankCode: RankCode;
+};
+
+export type RecordArchiveAttemptInput = {
+  readonly utcDate: string;
+  readonly caseId: string;
+  readonly userId: string | null;
+  readonly correct: boolean;
 };
 
 export type RecordAttemptOutcome = {
@@ -47,6 +55,9 @@ export type ShiftStore = {
   readonly recordAttempt: (
     input: RecordAttemptInput
   ) => Promise<RecordAttemptOutcome>;
+  readonly recordArchiveAttempt: (
+    input: RecordArchiveAttemptInput
+  ) => Promise<PlayerStats>;
   readonly hasSharedComment: (
     utcDate: string,
     userId: string
@@ -65,6 +76,7 @@ export const EMPTY_PLAYER_STATS: PlayerStats = {
   firstAttemptAttempted: false,
   firstAttemptRank: null,
   sharedToday: false,
+  solvedCaseIds: [],
 };
 
 export const EMPTY_COMMUNITY_STATS: CommunityStats = {
@@ -79,6 +91,7 @@ const dayStatsKey = (utcDate: string): string => `nsd:day:${utcDate}:stats`;
 const dayPlayedKey = (utcDate: string): string => `nsd:day:${utcDate}:played`;
 const daySharedKey = (utcDate: string): string => `nsd:day:${utcDate}:shared`;
 const userProfileKey = (userId: string): string => `nsd:user:${userId}:profile`;
+const userSolvedKey = (userId: string): string => `nsd:user:${userId}:solved`;
 
 const parseSafeInt = (value: string | undefined): number => {
   if (!value) {
@@ -113,6 +126,13 @@ const parseFirstAttempt = (
   } catch {
     return null;
   }
+};
+
+const extractSolvedCaseIds = (raw: Record<string, string>): string[] => {
+  return Object.entries(raw)
+    .filter(([, value]) => value === '1')
+    .map(([key]) => key)
+    .sort();
 };
 
 const parseCommunityStats = (
@@ -158,7 +178,8 @@ const buildPlayerStatsFromProfile = (
   profile: Record<string, string>,
   todayUtcDate: string,
   firstAttempt: StoredFirstAttempt | null,
-  sharedToday: boolean
+  sharedToday: boolean,
+  solvedCaseIds: readonly string[]
 ): PlayerStats => {
   const rawStreak = parseSafeInt(profile['currentStreak']);
   const bestStreak = parseSafeInt(profile['bestStreak']);
@@ -179,6 +200,7 @@ const buildPlayerStatsFromProfile = (
     firstAttemptAttempted: firstAttempt !== null,
     firstAttemptRank: firstAttempt?.rankCode ?? null,
     sharedToday,
+    solvedCaseIds,
   };
 };
 
@@ -188,22 +210,29 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
     userId: string | null
   ): Promise<DailySnapshot> => {
     try {
-      const [rawStats, rawFirstAttempt, rawShared, rawProfile] =
+      const [rawStats, rawFirstAttempt, rawShared, rawProfile, rawSolved] =
         await Promise.all([
           client.hGetAll(dayStatsKey(utcDate)),
-          userId ? client.hGet(dayPlayedKey(utcDate), userId) : Promise.resolve(undefined),
-          userId ? client.hGet(daySharedKey(utcDate), userId) : Promise.resolve(undefined),
+          userId
+            ? client.hGet(dayPlayedKey(utcDate), userId)
+            : Promise.resolve(undefined),
+          userId
+            ? client.hGet(daySharedKey(utcDate), userId)
+            : Promise.resolve(undefined),
           userId ? client.hGetAll(userProfileKey(userId)) : Promise.resolve({}),
+          userId ? client.hGetAll(userSolvedKey(userId)) : Promise.resolve({}),
         ]);
 
       const firstAttempt = parseFirstAttempt(rawFirstAttempt);
       const sharedToday = rawShared === '1';
+      const solvedCaseIds = extractSolvedCaseIds(rawSolved);
       const playerStats = userId
         ? buildPlayerStatsFromProfile(
             rawProfile,
             utcDate,
             firstAttempt,
-            sharedToday
+            sharedToday,
+            solvedCaseIds
           )
         : EMPTY_PLAYER_STATS;
 
@@ -236,6 +265,7 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
           firstAttemptAttempted: true,
           firstAttemptRank: input.rankCode,
           solvedToday: input.correct,
+          solvedCaseIds: input.correct ? [input.caseId] : [],
         },
         communityStats: parseCommunityStats(rawStats, true),
       };
@@ -245,6 +275,7 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
       const statsKey = dayStatsKey(input.utcDate);
       const playedKey = dayPlayedKey(input.utcDate);
       const profileKey = userProfileKey(input.userId);
+      const solvedKey = userSolvedKey(input.userId);
 
       const serialized = JSON.stringify({
         correct: input.correct,
@@ -271,6 +302,10 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
         ]);
       }
 
+      if (input.correct) {
+        await client.hSet(solvedKey, { [input.caseId]: '1' });
+      }
+
       const rawProfile = await client.hGetAll(profileKey);
       const lastSolvedUtcDate = rawProfile['lastSolvedUtcDate'] ?? '';
 
@@ -293,20 +328,27 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
         });
       }
 
-      const [updatedStats, updatedProfile, rawFirstAttempt, rawShared] =
-        await Promise.all([
-          client.hGetAll(statsKey),
-          client.hGetAll(profileKey),
-          client.hGet(playedKey, input.userId),
-          client.hGet(daySharedKey(input.utcDate), input.userId),
-        ]);
+      const [
+        updatedStats,
+        updatedProfile,
+        rawFirstAttempt,
+        rawShared,
+        rawSolved,
+      ] = await Promise.all([
+        client.hGetAll(statsKey),
+        client.hGetAll(profileKey),
+        client.hGet(playedKey, input.userId),
+        client.hGet(daySharedKey(input.utcDate), input.userId),
+        client.hGetAll(solvedKey),
+      ]);
 
       const firstAttempt = parseFirstAttempt(rawFirstAttempt);
       const playerStats = buildPlayerStatsFromProfile(
         updatedProfile,
         input.utcDate,
         firstAttempt,
-        rawShared === '1'
+        rawShared === '1',
+        extractSolvedCaseIds(rawSolved)
       );
 
       return {
@@ -323,9 +365,47 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
           firstAttemptAttempted: true,
           firstAttemptRank: input.rankCode,
           solvedToday: input.correct,
+          solvedCaseIds: input.correct ? [input.caseId] : [],
         },
         communityStats: EMPTY_COMMUNITY_STATS,
       };
+    }
+  };
+
+  const recordArchiveAttempt = async (
+    input: RecordArchiveAttemptInput
+  ): Promise<PlayerStats> => {
+    if (!input.userId) {
+      return {
+        ...EMPTY_PLAYER_STATS,
+        solvedCaseIds: input.correct ? [input.caseId] : [],
+      };
+    }
+
+    try {
+      const solvedKey = userSolvedKey(input.userId);
+      if (input.correct) {
+        await client.hSet(solvedKey, { [input.caseId]: '1' });
+      }
+
+      const [rawProfile, rawFirstAttempt, rawShared, rawSolved] =
+        await Promise.all([
+          client.hGetAll(userProfileKey(input.userId)),
+          client.hGet(dayPlayedKey(input.utcDate), input.userId),
+          client.hGet(daySharedKey(input.utcDate), input.userId),
+          client.hGetAll(solvedKey),
+        ]);
+
+      return buildPlayerStatsFromProfile(
+        rawProfile,
+        input.utcDate,
+        parseFirstAttempt(rawFirstAttempt),
+        rawShared === '1',
+        extractSolvedCaseIds(rawSolved)
+      );
+    } catch (error) {
+      console.warn('ShiftStore.recordArchiveAttempt failed:', error);
+      return EMPTY_PLAYER_STATS;
     }
   };
 
@@ -358,6 +438,7 @@ export const createRedisShiftStore = (client: RedisLike): ShiftStore => {
   return {
     getDailySnapshot,
     recordAttempt,
+    recordArchiveAttempt,
     hasSharedComment,
     markCommentShared,
   };

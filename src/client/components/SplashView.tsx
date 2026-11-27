@@ -61,6 +61,8 @@ export const SplashView = () => {
     : `${ui.shiftWord} #---`;
 
   const streak = daily?.playerStats.currentStreak ?? 0;
+  const solvedCount = daily?.playerStats.solvedCaseIds.length ?? 0;
+  const totalCases = daily?.totalCases ?? 9;
   const totalAnalysts = daily?.communityStats.totalAnalysts ?? 0;
   const containmentRate = daily?.communityStats.containmentRatePct ?? 0;
 
@@ -129,14 +131,18 @@ export const SplashView = () => {
             </p>
           </div>
 
-          {totalAnalysts > 0 ? (
+          {totalAnalysts > 0 || solvedCount > 0 ? (
             <div className="flex items-center justify-between rounded border border-slate-800 bg-[#090d14] px-2.5 py-1 font-mono text-[10px] text-slate-300">
               <span>
-                {totalAnalysts} {ui.analystsLabel}
+                {totalAnalysts > 0
+                  ? `${totalAnalysts} ${ui.analystsLabel} · ${containmentRate}% ${ui.containedShort}`
+                  : ui.splashBrand}
               </span>
-              <span className="font-semibold text-emerald-300">
-                {containmentRate}% {ui.containedShort}
-              </span>
+              {solvedCount > 0 ? (
+                <span className="font-semibold text-emerald-300">
+                  {ui.archiveProgressLabel} {solvedCount}/{totalCases}
+                </span>
+              ) : null}
             </div>
           ) : null}
 

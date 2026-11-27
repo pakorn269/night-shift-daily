@@ -14,6 +14,7 @@ void describe('Hono API routes with Redis/in-memory persistence & Reddit sharing
     const store = createInMemoryShiftStore();
     await store.recordAttempt({
       utcDate: '2026-11-25',
+      caseId: 'case-01',
       userId: 't2_other',
       correct: true,
       evidenceCorrect: true,
@@ -312,5 +313,77 @@ void describe('Hono API routes with Redis/in-memory persistence & Reddit sharing
     if (isApiErrorResponse(noPostBody)) {
       assert.equal(noPostBody.code, 'MISSING_POST_CONTEXT');
     }
+  });
+
+  void it('supports multi-round Archive Mode (/case/:caseId & mode=archive) without altering Daily Streak or First-Shift Consensus', async () => {
+    const store = createInMemoryShiftStore();
+    const api = createApiRouter({
+      getNow: () => new Date('2026-11-26T05:00:00.000Z'), // Today's daily = case-02
+      store,
+      getSessionContext: async () => ({
+        postId: 't3_demo',
+        userId: 't2_archive_tester',
+        username: 'archive_tester',
+      }),
+    });
+
+    // Load non-daily archive case-03
+    const caseRes = await api.request('/case/case-03');
+    assert.equal(caseRes.status, 200);
+    const caseBody: unknown = await caseRes.json();
+    assert.equal(isDailyCaseResponse(caseBody), true);
+    if (isDailyCaseResponse(caseBody)) {
+      assert.equal(caseBody.mode, 'archive');
+      assert.equal(caseBody.dailyCaseId, 'case-02');
+      assert.equal(caseBody.incidents.en.id, 'case-03');
+      assert.equal('solution' in caseBody.incidents.en, false);
+      assert.equal(caseBody.archiveCatalog.length, 9);
+      assert.equal(
+        caseBody.archiveCatalog.find((c) => c.id === 'case-02')?.isDailyToday,
+        true
+      );
+    }
+
+    // Solve archive case-03 -> records case-03 in solvedCaseIds, does NOT touch daily streak/consensus
+    const archiveEvalRes = await api.request('/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        caseId: 'case-03',
+        evidenceId: 'ev-3d',
+        actionId: 'act-3a',
+        mode: 'archive',
+        elapsedSeconds: 29,
+      }),
+    });
+    assert.equal(archiveEvalRes.status, 200);
+    const archiveEval: unknown = await archiveEvalRes.json();
+    assert.equal(isEvaluateResponse(archiveEval), true);
+    if (isEvaluateResponse(archiveEval)) {
+      assert.equal(archiveEval.mode, 'archive');
+      assert.equal(archiveEval.correct, true);
+      assert.deepEqual(archiveEval.playerStats.solvedCaseIds, ['case-03']);
+      assert.equal(archiveEval.playerStats.currentStreak, 0);
+      assert.equal(archiveEval.playerStats.firstAttemptAttempted, false);
+      assert.equal(archiveEval.communityStats.totalAnalysts, 0);
+      assert.equal(archiveEval.nextArchiveCaseId, 'case-04');
+    }
+
+    // Requesting today's daily case via /case/case-02 resolves back to mode=daily
+    const todayViaCase = await api.request('/case/case-02');
+    assert.equal(todayViaCase.status, 200);
+    const todayBody: unknown = await todayViaCase.json();
+    assert.equal(isDailyCaseResponse(todayBody), true);
+    if (isDailyCaseResponse(todayBody)) {
+      assert.equal(todayBody.mode, 'daily');
+      assert.equal(
+        todayBody.archiveCatalog.find((c) => c.id === 'case-03')?.solved,
+        true
+      );
+    }
+
+    // Unknown case returns 404
+    const missingRes = await api.request('/case/case-99');
+    assert.equal(missingRes.status, 404);
   });
 });

@@ -5,6 +5,7 @@ import type { SceneOutcome } from '../canvas/sceneRenderer.ts';
 import { useDailyShift } from '../hooks/useDailyShift.ts';
 import { useLanguage } from '../hooks/useLanguage.ts';
 import { ActionSelector } from './ActionSelector.tsx';
+import { ArchiveDrawer } from './ArchiveDrawer.tsx';
 import { ClueDeck } from './ClueDeck.tsx';
 import { LanguageSwitcher } from './LanguageSwitcher.tsx';
 import { SecurityMonitorCanvas } from './SecurityMonitorCanvas.tsx';
@@ -22,6 +23,7 @@ export const GameView = () => {
     state,
     toggleMute,
     loadDailyShift,
+    loadCaseById,
     focusEvidence,
     selectEvidence,
     toggleRuleOut,
@@ -32,6 +34,7 @@ export const GameView = () => {
   } = useDailyShift();
 
   const [showBrief, setShowBrief] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
 
   const activeIncident = state.session
     ? language === 'th'
@@ -159,6 +162,7 @@ export const GameView = () => {
 
   const isSubmitting = state.status === 'submitting';
   const isEvaluated = state.status === 'evaluated';
+  const isArchiveMode = session.mode === 'archive';
   const canSubmit =
     state.status === 'ready' &&
     state.selectedEvidenceId !== null &&
@@ -177,7 +181,9 @@ export const GameView = () => {
     : -1;
 
   const focusedRow =
-    focusedIdx >= 0 ? activeIncident.evidence[focusedIdx] : activeIncident.evidence[0];
+    focusedIdx >= 0
+      ? activeIncident.evidence[focusedIdx]
+      : activeIncident.evidence[0];
 
   let canvasOutcome: SceneOutcome = 'idle';
   if (isSubmitting) {
@@ -187,6 +193,7 @@ export const GameView = () => {
   }
 
   const currentStreak = session.playerStats.currentStreak;
+  const solvedCount = session.playerStats.solvedCaseIds.length;
 
   return (
     <main className="hd-dither min-h-screen w-full px-2 py-2 pb-4 sm:px-4 sm:py-3">
@@ -199,21 +206,43 @@ export const GameView = () => {
 
         <div className="space-y-2 p-2.5 sm:p-3.5">
           {/* Guaranteed 1-Row Compact Hardware Top Bezel */}
-          <header className="flex items-center justify-between gap-1.5 rounded-md border border-slate-800 bg-[#090d14] px-2 py-1.5">
+          <header className="flex items-center justify-between gap-1 rounded-md border border-slate-800 bg-[#090d14] px-2 py-1.5">
             <div className="flex items-center gap-1.5 min-w-0">
               <span
                 aria-hidden="true"
-                className="hd-beacon-pulse h-2 w-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]"
+                className={`hd-beacon-pulse h-2 w-2 shrink-0 rounded-full ${
+                  isArchiveMode
+                    ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]'
+                    : 'bg-amber-400 shadow-[0_0_8px_#f59e0b]'
+                }`}
               />
-              <span className="whitespace-nowrap font-mono text-[11px] font-bold tracking-wider text-amber-300 uppercase">
-                {ui.shiftWord} #{formatShiftNumber(session.shiftNumber)}
+              <span
+                className={`whitespace-nowrap font-mono text-[10px] sm:text-[11px] font-bold tracking-wider uppercase ${
+                  isArchiveMode ? 'text-cyan-300' : 'text-amber-300'
+                }`}
+              >
+                {isArchiveMode
+                  ? `${ui.archiveCaseWord} #${formatShiftNumber(session.shiftNumber)}`
+                  : `${ui.shiftWord} #${formatShiftNumber(session.shiftNumber)}`}
               </span>
               {currentStreak > 0 ? (
                 <span className="shrink-0 rounded border border-amber-400/50 bg-amber-950/45 px-1 py-0.5 font-mono text-[9px] font-bold text-amber-200">
                   🔥{currentStreak}
                 </span>
               ) : null}
-              <span className="hidden truncate font-mono text-[10px] text-slate-400 sm:inline">
+              <button
+                type="button"
+                onClick={() => setShowArchive((prev) => !prev)}
+                aria-expanded={showArchive}
+                className={`shrink-0 cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wide uppercase transition-colors ${
+                  showArchive
+                    ? 'border-amber-400 bg-amber-400 text-slate-950'
+                    : 'border-slate-700 bg-slate-900 text-slate-200 hover:border-amber-400/60'
+                }`}
+              >
+                {ui.archiveBtn} {solvedCount}/{session.totalCases}
+              </button>
+              <span className="hidden truncate font-mono text-[10px] text-slate-400 md:inline">
                 · u/{session.username}
               </span>
             </div>
@@ -233,6 +262,22 @@ export const GameView = () => {
               <LanguageSwitcher language={language} onChange={setLanguage} />
             </div>
           </header>
+
+          {/* Collapsible 9-Case Archive Queue Drawer */}
+          {showArchive ? (
+            <ArchiveDrawer
+              catalog={session.archiveCatalog}
+              activeCaseId={activeIncident.id}
+              lang={language}
+              ui={ui}
+              onSelectCase={(caseId) => {
+                setShowArchive(false);
+                setShowBrief(false);
+                void loadCaseById(caseId);
+              }}
+              onClose={() => setShowArchive(false)}
+            />
+          ) : null}
 
           {state.errorMessage ? (
             <div
@@ -273,19 +318,33 @@ export const GameView = () => {
                       <h1 className="text-[13px] font-bold leading-snug text-slate-50">
                         {activeIncident.title}
                       </h1>
-                      <p className="font-mono text-[9px] text-slate-400 sm:hidden">
+                      <p className="font-mono text-[9px] text-slate-400 md:hidden">
                         {activeIncident.category} · u/{session.username}
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowBrief((prev) => !prev)}
-                    aria-expanded={showBrief}
-                    className="shrink-0 cursor-pointer rounded border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[10px] text-slate-300 hover:border-slate-500"
-                  >
-                    {showBrief ? ui.hideBrief : ui.showBrief}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {isArchiveMode ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowBrief(false);
+                          void loadDailyShift();
+                        }}
+                        className="cursor-pointer rounded border border-amber-400/50 bg-amber-950/40 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-200 hover:border-amber-300"
+                      >
+                        {ui.todayTag}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => setShowBrief((prev) => !prev)}
+                      aria-expanded={showBrief}
+                      className="cursor-pointer rounded border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[10px] text-slate-300 hover:border-slate-500"
+                    >
+                      {showBrief ? ui.hideBrief : ui.showBrief}
+                    </button>
+                  </div>
                 </div>
 
                 {showBrief ? (
@@ -307,7 +366,7 @@ export const GameView = () => {
               </section>
             </div>
 
-            {/* Right Column: Triage Controls OR Verdict & Community Debrief */}
+            {/* Right Column: Triage Controls OR Verdict & Multi-Round Debrief */}
             <div className="space-y-2">
               {!isEvaluated ? (
                 <>
@@ -353,6 +412,7 @@ export const GameView = () => {
                 <VerdictPanel
                   evaluation={state.evaluation}
                   actions={activeIncident.actions}
+                  totalCases={session.totalCases}
                   nextRolloverUtc={session.nextRolloverUtc}
                   lang={language}
                   ui={ui}
@@ -362,7 +422,16 @@ export const GameView = () => {
                     void shareToComments(nativeEvent, language)
                   }
                   onReplay={replayCurrentCase}
-                  onLoadLatest={() => void loadDailyShift()}
+                  onPlayNextArchive={(nextCaseId) => {
+                    setShowBrief(false);
+                    setShowArchive(false);
+                    void loadCaseById(nextCaseId);
+                  }}
+                  onLoadDaily={() => {
+                    setShowBrief(false);
+                    setShowArchive(false);
+                    void loadDailyShift();
+                  }}
                 />
               ) : null}
             </div>

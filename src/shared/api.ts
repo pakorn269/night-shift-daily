@@ -1,6 +1,7 @@
 export type {
   ApiErrorCode,
   ApiErrorResponse,
+  ArchiveCatalogItem,
   AuthoredCase,
   CaseSolution,
   CommunityStats,
@@ -17,4 +18,5 @@ export type {
   SceneTemplateId,
   ShareCommentRequest,
   ShareCommentResponse,
+  ShiftMode,
 } from './types.ts';

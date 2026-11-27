@@ -7,6 +7,8 @@ export type SceneTemplateId =
 
 export type RankCode = 'S' | 'A' | 'B' | 'C' | 'F';
 
+export type ShiftMode = 'daily' | 'archive';
+
 export type EvidenceRow = {
   readonly id: string;
   readonly nodeId: string;
@@ -55,6 +57,19 @@ export type AuthoredCase = PublicCase & {
   readonly solution: CaseSolution;
 };
 
+export type ArchiveCatalogItem = {
+  readonly id: string;
+  readonly caseNumber: number;
+  readonly incidentCode: string;
+  readonly titleEn: string;
+  readonly titleTh: string;
+  readonly categoryEn: string;
+  readonly categoryTh: string;
+  readonly sceneTemplate: SceneTemplateId;
+  readonly isDailyToday: boolean;
+  readonly solved: boolean;
+};
+
 export type PlayerStats = {
   readonly currentStreak: number;
   readonly bestStreak: number;
@@ -63,6 +78,7 @@ export type PlayerStats = {
   readonly firstAttemptAttempted: boolean;
   readonly firstAttemptRank: RankCode | null;
   readonly sharedToday: boolean;
+  readonly solvedCaseIds: readonly string[];
 };
 
 export type CommunityStats = {
@@ -80,6 +96,8 @@ export type LocalizedPublicCases = {
 
 export type DailyCaseResponse = {
   readonly type: 'daily';
+  readonly mode: ShiftMode;
+  readonly dailyCaseId: string;
   readonly utcDate: string;
   readonly shiftNumber: number;
   readonly totalCases: number;
@@ -87,6 +105,7 @@ export type DailyCaseResponse = {
   readonly username: string;
   readonly postId: string | null;
   readonly incidents: LocalizedPublicCases;
+  readonly archiveCatalog: readonly ArchiveCatalogItem[];
   readonly playerStats: PlayerStats;
   readonly communityStats: CommunityStats;
 };
@@ -95,6 +114,7 @@ export type EvaluateRequest = {
   readonly caseId: string;
   readonly evidenceId: string;
   readonly actionId: string;
+  readonly mode?: ShiftMode | undefined;
   readonly startedUtcDate?: string | undefined;
   readonly elapsedSeconds?: number | undefined;
   readonly clearedCount?: number | undefined;
@@ -113,6 +133,7 @@ export type EvaluationCopy = {
 
 export type EvaluateResponse = {
   readonly type: 'evaluation';
+  readonly mode: ShiftMode;
   readonly caseId: string;
   readonly incidentCode: string;
   readonly shiftNumber: number;
@@ -137,6 +158,7 @@ export type EvaluateResponse = {
   };
   readonly currentUtcDate: string;
   readonly newShiftAvailable: boolean;
+  readonly nextArchiveCaseId: string | null;
   readonly playerStats: PlayerStats;
   readonly communityStats: CommunityStats;
 };

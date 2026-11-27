@@ -8,8 +8,8 @@
 
 - [Reddit's Game of the Day Hackathon 2026](https://redditgameofday2026.devpost.com/): registered solo; game not submitted yet.
 - Official submission deadline: **December 9, 2026, 09:00 ICT** (December 8, 18:00 PST / December 9, 02:00 UTC).
-- Current implementation (`v0.1.0` uploaded privately under `u/pakorn269` and installed in Public `r/night_shift_daily_dev`):
-  - **9 distinct authored fictional *Halcyon Desk* cases** (`INC-0407` through `INC-0461`) across **5 modular 60 FPS pixel-art CCTV cutaway templates** (`annex-cutaway`, `pbx-vlan`, `tape-vault`, `server-rack`, `hvac-power`), with balanced `A`/`B`/`C` containment breakers and full **English + Thai (`EN | ไทย`)** localization (English default).
+- Current implementation (`v0.2.0` uploaded privately under `u/pakorn269` and installed in Public `r/night_shift_daily_dev`):
+  - **9 distinct authored fictional *Halcyon Desk* cases** (`INC-0407` through `INC-0461`) across **5 modular 60 FPS pixel-art CCTV cutaway templates** (`annex-cutaway`, `pbx-vlan`, `tape-vault`, `server-rack`, `hvac-power`), playable both as **Today's Official Daily Shift** (00:00 UTC rotation) and via the built-in **Multi-Round Case Archive** (`CASES X/9` drawer & `Play Next Archive Shift →`), with full **English + Thai (`EN | ไทย`)** localization.
   - **Zero-leak server architecture:** All case definitions, solutions, and debrief explanations stay strictly server-side (`src/server/data/`) and never enter `dist/client/*.js`.
   - **Reddit-native community loop (zero lockouts):** Devvit Redis tracks each player's **Attempt #1** toward their **Daily Streak** and **First-Shift Community Consensus** (% contained & breaker vote bars), while keeping **Replay This Shift** completely unlocked (`PRACTICE REPLAY` badge) so judges can test both winning and failing outcomes freely.
   - **One-click Spoiler-Free Sharing & Next-Shift Countdown:** Players can post a spoiler-free Rank + Streak shift debrief directly to the Reddit post's comment thread (`asUser: ["SUBMIT_COMMENT"]` with 1/day anti-spam protection) or copy/share via `showShareSheet`/clipboard, alongside a live `NEXT SHIFT IN HH:MM:SS` countdown.

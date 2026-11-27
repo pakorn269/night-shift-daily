@@ -16,6 +16,7 @@ import type { CommentShareStatus } from '../hooks/useDailyShift.ts';
 type VerdictPanelProps = {
   readonly evaluation: EvaluateResponse;
   readonly actions: readonly ContainmentAction[];
+  readonly totalCases: number;
   readonly nextRolloverUtc: string;
   readonly lang: Language;
   readonly ui: UiStrings;
@@ -23,7 +24,8 @@ type VerdictPanelProps = {
   readonly shareErrorMessage: string | null;
   readonly onShareToComments: (nativeEvent: Event) => void;
   readonly onReplay: () => void;
-  readonly onLoadLatest: () => void;
+  readonly onPlayNextArchive: (caseId: string) => void;
+  readonly onLoadDaily: () => void;
 };
 
 const BREAKER_CODES = ['A', 'B', 'C'];
@@ -80,6 +82,7 @@ const getRankPresentation = (
 export const VerdictPanel = ({
   evaluation,
   actions,
+  totalCases,
   nextRolloverUtc,
   lang,
   ui,
@@ -87,7 +90,8 @@ export const VerdictPanel = ({
   shareErrorMessage,
   onShareToComments,
   onReplay,
-  onLoadLatest,
+  onPlayNextArchive,
+  onLoadDaily,
 }: VerdictPanelProps) => {
   const [countdown, setCountdown] = useState<string | null>(() =>
     computeCountdown(nextRolloverUtc)
@@ -112,6 +116,9 @@ export const VerdictPanel = ({
     ui
   );
 
+  const isDaily = evaluation.mode === 'daily';
+  const solvedCount = evaluation.playerStats.solvedCaseIds.length;
+
   const handleCopyCard = async () => {
     const text = formatShiftShareText({
       shiftNumber: evaluation.shiftNumber,
@@ -127,7 +134,10 @@ export const VerdictPanel = ({
 
     let didCopy = false;
     try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      if (
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === 'function'
+      ) {
         await navigator.clipboard.writeText(text);
         didCopy = true;
       }
@@ -171,25 +181,29 @@ export const VerdictPanel = ({
       aria-live="polite"
       className="hd-panel-in hd-cut-md space-y-2 border border-slate-700 bg-[#0e141d] p-3 shadow-xl"
     >
-      {/* Attempt Type + Streak + Next Shift Countdown */}
+      {/* Mode + Streak + Archive Progress + Next Daily Countdown */}
       <div className="flex flex-wrap items-center justify-between gap-1.5 font-mono text-[10px]">
         <div className="flex flex-wrap items-center gap-1.5">
           <span
             className={`rounded border px-1.5 py-0.5 font-bold uppercase ${
-              evaluation.isFirstAttempt
-                ? 'border-amber-400/70 bg-amber-950/50 text-amber-200'
-                : 'border-slate-600 bg-slate-900 text-slate-300'
+              !isDaily
+                ? 'border-cyan-400/70 bg-cyan-950/50 text-cyan-200'
+                : evaluation.isFirstAttempt
+                  ? 'border-amber-400/70 bg-amber-950/50 text-amber-200'
+                  : 'border-slate-600 bg-slate-900 text-slate-300'
             }`}
           >
-            {evaluation.isFirstAttempt
-              ? ui.officialShiftBadge
-              : `${ui.practiceReplayPrefix} #${evaluation.attemptNumber}`}
+            {!isDaily
+              ? ui.archiveModeBadge
+              : evaluation.isFirstAttempt
+                ? ui.officialShiftBadge
+                : `${ui.practiceReplayPrefix} #${evaluation.attemptNumber}`}
           </span>
           <span className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-amber-200">
             🔥 {ui.streakLabel} {evaluation.playerStats.currentStreak}
-            {evaluation.playerStats.bestStreak > 0
-              ? ` · ${ui.bestLabel} ${evaluation.playerStats.bestStreak}`
-              : ''}
+          </span>
+          <span className="rounded border border-emerald-500/40 bg-emerald-950/40 px-1.5 py-0.5 text-emerald-200">
+            {ui.archiveProgressLabel} {solvedCount}/{totalCases}
           </span>
         </div>
 
@@ -273,81 +287,88 @@ export const VerdictPanel = ({
         </div>
       </div>
 
-      {/* First-Shift Community Consensus */}
-      <div className="rounded border border-slate-700/80 bg-[#090d14] p-2 space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-1 font-mono text-[10px]">
-          <span className="font-bold tracking-wider text-amber-300 uppercase">
-            {ui.communityHeading}
-          </span>
-          <span className="text-slate-300">
-            {totalAnalysts > 0
-              ? `${containmentPct}% ${ui.communityContainedSuffix} · ${totalAnalysts} ${ui.analystsLabel}`
-              : ui.communityEmptyNote}
-          </span>
-        </div>
-
-        {totalAnalysts > 0 ? (
-          <div className="space-y-1">
-            {actions.map((action, idx) => {
-              const votes = evaluation.communityStats.actionCounts[action.id] ?? 0;
-              const pct = Math.round((votes / totalAnalysts) * 100);
-              const isCorrectAct = action.id === evaluation.correctActionId;
-              const isPickedAct = action.id === evaluation.selectedActionId;
-              const code = BREAKER_CODES[idx] ?? String(idx + 1);
-
-              return (
-                <div key={action.id} className="space-y-0.5">
-                  <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
-                    <span className="truncate text-slate-200">
-                      [{code}] {action.label}{' '}
-                      {isCorrectAct ? '✓' : isPickedAct ? '●' : ''}
-                    </span>
-                    <span className="shrink-0 text-slate-300">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      className={`h-full rounded-full ${
-                        isCorrectAct
-                          ? 'bg-emerald-400'
-                          : isPickedAct
-                            ? 'bg-rose-400'
-                            : 'bg-slate-500'
-                      }`}
-                      style={{ width: `${Math.max(pct, votes > 0 ? 4 : 0)}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+      {/* First-Shift Community Consensus (Daily Shift Only) */}
+      {isDaily ? (
+        <div className="rounded border border-slate-700/80 bg-[#090d14] p-2 space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-1 font-mono text-[10px]">
+            <span className="font-bold tracking-wider text-amber-300 uppercase">
+              {ui.communityHeading}
+            </span>
+            <span className="text-slate-300">
+              {totalAnalysts > 0
+                ? `${containmentPct}% ${ui.communityContainedSuffix} · ${totalAnalysts} ${ui.analystsLabel}`
+                : ui.communityEmptyNote}
+            </span>
           </div>
-        ) : null}
-      </div>
+
+          {totalAnalysts > 0 ? (
+            <div className="space-y-1">
+              {actions.map((action, idx) => {
+                const votes =
+                  evaluation.communityStats.actionCounts[action.id] ?? 0;
+                const pct = Math.round((votes / totalAnalysts) * 100);
+                const isCorrectAct = action.id === evaluation.correctActionId;
+                const isPickedAct = action.id === evaluation.selectedActionId;
+                const code = BREAKER_CODES[idx] ?? String(idx + 1);
+
+                return (
+                  <div key={action.id} className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-2 font-mono text-[10px]">
+                      <span className="truncate text-slate-200">
+                        [{code}] {action.label}{' '}
+                        {isCorrectAct ? '✓' : isPickedAct ? '●' : ''}
+                      </span>
+                      <span className="shrink-0 text-slate-300">{pct}%</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className={`h-full rounded-full ${
+                          isCorrectAct
+                            ? 'bg-emerald-400'
+                            : isPickedAct
+                              ? 'bg-rose-400'
+                              : 'bg-slate-500'
+                        }`}
+                        style={{
+                          width: `${Math.max(pct, votes > 0 ? 4 : 0)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {/* Reddit Community Sharing Row */}
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={commentShareStatus !== 'idle'}
-          onClick={(e) => onShareToComments(e.nativeEvent)}
-          className={`hd-cut-sm min-h-[40px] px-2.5 py-2 font-mono text-[11px] font-bold tracking-wide uppercase ${
-            commentShareStatus === 'posted'
-              ? 'border border-emerald-400/70 bg-emerald-950/60 text-emerald-200 cursor-default'
+      <div className={isDaily ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-1'}>
+        {isDaily ? (
+          <button
+            type="button"
+            disabled={commentShareStatus !== 'idle'}
+            onClick={(e) => onShareToComments(e.nativeEvent)}
+            className={`hd-cut-sm min-h-[38px] px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-wide uppercase ${
+              commentShareStatus === 'posted'
+                ? 'border border-emerald-400/70 bg-emerald-950/60 text-emerald-200 cursor-default'
+                : commentShareStatus === 'posting'
+                  ? 'hd-trigger-locked cursor-wait'
+                  : 'hd-switch-raised text-amber-200 cursor-pointer'
+            }`}
+          >
+            {commentShareStatus === 'posted'
+              ? ui.postedCommentBtn
               : commentShareStatus === 'posting'
-                ? 'hd-trigger-locked cursor-wait'
-                : 'hd-switch-raised text-amber-200 cursor-pointer'
-          }`}
-        >
-          {commentShareStatus === 'posted'
-            ? ui.postedCommentBtn
-            : commentShareStatus === 'posting'
-              ? ui.postingCommentBtn
-              : ui.postCommentBtn}
-        </button>
+                ? ui.postingCommentBtn
+                : ui.postCommentBtn}
+          </button>
+        ) : null}
 
         <button
           type="button"
           onClick={() => void handleCopyCard()}
-          className="hd-cut-sm hd-switch-raised min-h-[40px] cursor-pointer px-2.5 py-2 font-mono text-[11px] font-bold tracking-wide text-slate-100 uppercase"
+          className="hd-cut-sm hd-switch-raised min-h-[38px] cursor-pointer px-2.5 py-1.5 font-mono text-[11px] font-bold tracking-wide text-slate-100 uppercase"
         >
           {copied ? ui.copiedCardBtn : ui.copyCardBtn}
         </button>
@@ -359,20 +380,51 @@ export const VerdictPanel = ({
         </p>
       ) : null}
 
-      {/* Replay & Midnight Rollover Actions */}
+      {/* Multi-Round Progression & Replay Actions */}
       <div className="flex flex-col gap-1.5 pt-0.5">
-        <button
-          type="button"
-          onClick={onReplay}
-          className="hd-cut-sm hd-trigger-armed w-full min-h-[42px] cursor-pointer px-4 py-2 font-mono text-xs font-extrabold tracking-wider uppercase"
+        {evaluation.nextArchiveCaseId ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (evaluation.nextArchiveCaseId) {
+                onPlayNextArchive(evaluation.nextArchiveCaseId);
+              }
+            }}
+            className="hd-cut-sm hd-trigger-armed w-full min-h-[42px] cursor-pointer px-4 py-2 font-mono text-xs font-extrabold tracking-wider uppercase"
+          >
+            {ui.nextArchiveBtn}
+          </button>
+        ) : null}
+
+        <div
+          className={
+            !isDaily ? 'grid grid-cols-2 gap-1.5' : 'grid grid-cols-1'
+          }
         >
-          {ui.replayShiftBtn}
-        </button>
+          <button
+            type="button"
+            onClick={onReplay}
+            className="hd-cut-sm hd-switch-raised w-full min-h-[38px] cursor-pointer px-3 py-1.5 font-mono text-[11px] font-bold tracking-wider text-slate-100 uppercase"
+          >
+            {ui.replayShiftBtn}
+          </button>
+
+          {!isDaily ? (
+            <button
+              type="button"
+              onClick={onLoadDaily}
+              className="hd-cut-sm hd-switch-raised w-full min-h-[38px] cursor-pointer px-3 py-1.5 font-mono text-[11px] font-bold tracking-wider text-amber-200 uppercase"
+            >
+              {ui.backToDailyBtn}
+            </button>
+          ) : null}
+        </div>
+
         {evaluation.newShiftAvailable ? (
           <button
             type="button"
-            onClick={onLoadLatest}
-            className="hd-cut-sm hd-switch-raised w-full min-h-[40px] cursor-pointer px-4 py-2 font-mono text-xs font-semibold text-slate-100"
+            onClick={onLoadDaily}
+            className="hd-cut-sm hd-switch-raised w-full min-h-[38px] cursor-pointer px-4 py-1.5 font-mono text-xs font-semibold text-amber-200"
           >
             {ui.newShiftPrefix} ({evaluation.currentUtcDate}) —{' '}
             {ui.newShiftSuffix}

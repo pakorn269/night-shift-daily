@@ -80,13 +80,24 @@ export type UiStrings = {
   readonly camBreach: string;
   readonly camScanning: string;
   readonly telemetryPrefix: string;
+  readonly archiveBtn: string;
+  readonly archiveHeading: string;
+  readonly archiveSubtitle: string;
+  readonly archiveModeBadge: string;
+  readonly archiveCaseWord: string;
+  readonly todayTag: string;
+  readonly clearedTag: string;
+  readonly openTag: string;
+  readonly nextArchiveBtn: string;
+  readonly backToDailyBtn: string;
+  readonly archiveProgressLabel: string;
 };
 
 const EN_STRINGS: UiStrings = {
   splashBrand: 'Halcyon Desk // CCTV',
   splashTitle: 'Night Shift Daily',
   splashCta: '▶ Play Today’s Shift',
-  splashFooter: '60–90 SEC · DAILY 00:00 UTC · 9 CASES · UNLIMITED PRACTICE',
+  splashFooter: '60–90 SEC · DAILY 00:00 UTC · 9 CASES + ARCHIVE',
   splashLoadingTitle: 'Syncing Midnight Incident Queue…',
   splashLoadingTeaser:
     'Connecting to Halcyon Desk security telemetry for today’s 00:00 UTC shift.',
@@ -161,13 +172,24 @@ const EN_STRINGS: UiStrings = {
   camBreach: 'BREACH ALERT',
   camScanning: 'SCANNING...',
   telemetryPrefix: 'FEED',
+  archiveBtn: 'CASES',
+  archiveHeading: 'Halcyon Desk // Case Queue',
+  archiveSubtitle: 'Play Today’s Daily Shift for streaks & consensus, or train on any archive case.',
+  archiveModeBadge: 'ARCHIVE SHIFT',
+  archiveCaseWord: 'Case',
+  todayTag: 'TODAY',
+  clearedTag: 'CLEARED ✓',
+  openTag: 'OPEN',
+  nextArchiveBtn: 'Play Next Archive Shift →',
+  backToDailyBtn: '← Today’s Daily Shift',
+  archiveProgressLabel: 'ARCHIVE',
 };
 
 const TH_STRINGS: UiStrings = {
   splashBrand: 'Halcyon Desk // กล้องวงจรปิด',
   splashTitle: 'Night Shift Daily (กะดึก)',
   splashCta: '▶ เริ่มเข้ากะวันนี้',
-  splashFooter: '60–90 วิ · รีเซ็ต 00:00 UTC · 9 เคส · ซ้อมเล่นได้ไม่จำกัด',
+  splashFooter: '60–90 วิ · รีเซ็ต 00:00 UTC · 9 เคส + คลังฝึกซ้อม',
   splashLoadingTitle: 'กำลังซิงก์คิวเหตุฉุกเฉินกะดึก…',
   splashLoadingTeaser:
     'กำลังเชื่อมต่อสัญญาณกล้อง Halcyon Desk สำหรับรอบเวร 00:00 UTC วันนี้',
@@ -242,6 +264,17 @@ const TH_STRINGS: UiStrings = {
   camBreach: 'แจ้งเตือนรั่วไหล',
   camScanning: 'กำลังสแกน...',
   telemetryPrefix: 'สัญญาณ',
+  archiveBtn: 'คลังเคส',
+  archiveHeading: 'Halcyon Desk // คิวเคสทั้งหมด',
+  archiveSubtitle: 'เล่นกะประจำวันเพื่อนับสถิติต่อเนื่อง & โหวตชุมชน หรือเลือกฝึกซ้อมเคสอื่นได้ทันที',
+  archiveModeBadge: 'เคสคลังฝึกซ้อม',
+  archiveCaseWord: 'เคส',
+  todayTag: 'วันนี้',
+  clearedTag: 'ผ่านแล้ว ✓',
+  openTag: 'ยังไม่ผ่าน',
+  nextArchiveBtn: 'เล่นเคสถัดไปในคลัง →',
+  backToDailyBtn: '← กลับไปกะประจำวัน',
+  archiveProgressLabel: 'คลังเคส',
 };
 
 export const getUiStrings = (lang: Language): UiStrings => {
