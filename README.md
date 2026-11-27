@@ -1,8 +1,18 @@
 # Night Shift Daily
 
-> A daily IT horror deduction game, played inside a Reddit post. One shift, one incident, one decision.
+> A 60-second 03:00 AM IT horror deduction game played directly inside a Reddit post — one shift, one incident, one decision.
 
-**Night Shift Daily** takes place in the Halcyon Desk ITSM universe of [Night Shift Help Desk](https://github.com/pakorn269/night-shift-help-desk). The Reddit edition is a separate project built from scratch for Devvit Web around a short 60–90 second daily case, community consensus, daily streaks, and spoiler-free comment handovers.
+[![Night Shift Daily — Halcyon Desk Incident Console](docs/assets/hero.png)](https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/)
+
+**[▶ Play Live on Reddit (`r/night_shift_daily_dev`)](https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/)** · **[r/GamesOnReddit Thread](https://www.reddit.com/r/GamesOnReddit/comments/1y6hjta/night_shift_daily_60s_midnight_it_horror/)** · **[Devpost Draft](docs/DEVPOST-DRAFT.md)** · **[Submission Checklist](docs/SUBMISSION.md)**
+
+**Night Shift Daily** takes place in the fictional *Halcyon Desk* ITSM universe of [Night Shift Help Desk](https://github.com/pakorn269/night-shift-help-desk). Built from scratch for **Reddit Devvit Web**, it turns a Reddit post into an animated 60 FPS pixel-art CCTV security terminal with daily streaks, first-shift community consensus, and 1-click spoiler-free comment handovers.
+
+## Gameplay Preview
+
+![Night Shift Daily — 60 FPS CCTV Triage, Lockdown Payoff & Reddit Consensus](docs/assets/gameplay-preview.gif)
+
+*Inspect hotspots on the 60 FPS CCTV feed, clear distractors, flag the single technical contradiction, arm the containment breaker, trigger the lockdown sequence, and post a spoiler-free shift report directly into the Reddit comments.*
 
 ## Status
 
