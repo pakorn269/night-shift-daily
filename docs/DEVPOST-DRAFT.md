@@ -13,6 +13,7 @@
 | **Devvit App Listing URL** | `https://developers.reddit.com/apps/night-shift-daily` |
 | **Public Test Subreddit (<200 members)** | `https://www.reddit.com/r/night_shift_daily_dev/` *(Public, custom Halcyon Desk pixel-art icon/banner)* |
 | **Direct Playable Demo Post URL** | `https://www.reddit.com/r/night_shift_daily_dev/comments/1y58bk0/night_shift_daily_halcyon_desk_incident_queue/` |
+| **r/GamesOnReddit Crosspost URL** | `https://www.reddit.com/r/GamesOnReddit/comments/1y6hjta/night_shift_daily_60s_midnight_it_horror/` |
 | **Welcome / Rules Post URL** | `https://www.reddit.com/r/night_shift_daily_dev/comments/1y59jsf/welcome_to_night_shift_daily_halcyon_desk/` |
 
 ---
@@ -38,6 +39,7 @@ Every UTC day (`00:00 UTC` rollover), *Night Shift Daily* gives every Redditor t
 3. **Arm Containment Breakers & CRT SFX:** Players flag 1 contradictory hotspot (via canvas tap, tab, or keys `1`–`5`), arm 1 of 3 balanced containment breakers (`A`/`B`/`C`), and hear procedural Web Audio CRT cues (`[SFX ON/OFF]`).
 4. **Animated Payoff, Daily Streak & Community Consensus:** Clicking **Execute Containment** triggers a live canvas lockdown or breach sequence, freezes the stopwatch, stamps an Analyst Rank (`RANK S`–`RANK F`), updates your Redis **Daily Streak**, and reveals **First-Shift Community Consensus** (percentage of analysts who contained today's breach and how the community voted across breakers).
 5. **Spoiler-Free Reddit Comment Handover & Unlimited Practice:** Players can drop a spoiler-free shift summary directly into the Reddit post's comments (`Post to Comments`, rate-limited to 1/day via `asUser: ["SUBMIT_COMMENT"]`) or copy it via `Copy Shift Card`, see the live `NEXT SHIFT IN HH:MM:SS` countdown, and click **Replay This Shift** anytime for unlimited practice (labeled `PRACTICE REPLAY` so Attempt #1 stats stay authentic).
+6. **Multi-Round Case Archive (`CASES X/9`):** Right after finishing Today's Daily Shift (or anytime via the `CASES X/9` drawer in the top bezel), players and judges can hit **Play Next Archive Shift →** to play through all 9 authored incidents and all 5 CCTV room templates in one sitting—with cleared progress saved in Redis while keeping Today's Daily Streak and First-Shift Consensus strictly isolated.
 
 ---
 
@@ -45,14 +47,14 @@ Every UTC day (`00:00 UTC` rollover), *Night Shift Daily* gives every Redditor t
 
 - **Platform:** Reddit Devvit Web (`@devvit/web` 0.15.4, `@devvit/start` 0.15.4) with dual entrypoints (`splash.html` inline `height: tall` + `game.html` responsive 1-column mobile / 2-column desktop workspace), Devvit Redis (`redis: true`), and optional user-consented comment posting (`asUser: ["SUBMIT_COMMENT"]`).
 - **Frontend:** React 19, strict TypeScript (zero type casts), Tailwind CSS 4, Vite, 60 FPS HTML5 2D `<canvas>` renderer (`360×210` logical resolution with `prefers-reduced-motion` and zero 1-second RAF churn), procedural Web Audio API SFX, and an instant **`EN | ไทย`** language switcher (English default). Zero case solutions are bundled in `dist/client/*.js`.
-- **Backend:** Hono REST API (`GET /api/daily`, `POST /api/evaluate`, `POST /api/share-comment`) with server-only case catalog/solutions (`src/server/data/`), atomic Redis `hSetNX` Attempt #1 tracking (`src/server/core/store.ts`), and `00:00 UTC` mid-shift rollover stability.
-- **Verification:** Covered by Node native unit & Hono API tests verifying all 9 cases, balanced `A`/`B`/`C` solutions, full EN/TH localization, streak increments/resets, first-attempt vs. replay integrity, comment share anti-spam, and client bundle zero-leak checks.
+- **Backend:** Hono REST API (`GET /api/daily`, `GET /api/case/:caseId`, `POST /api/evaluate`, `POST /api/share-comment`) with server-only case catalog/solutions (`src/server/data/`), atomic Redis `hSetNX` Attempt #1 tracking + archive progress (`src/server/core/store.ts`), and `00:00 UTC` mid-shift rollover stability.
+- **Verification:** Covered by 18 Node native unit & Hono API tests verifying all 9 cases, balanced `A`/`B`/`C` solutions, full EN/TH localization, streak increments/resets, first-attempt vs. replay integrity, multi-round archive isolation, comment share anti-spam, and client bundle zero-leak checks.
 
 ---
 
 ## Spoiler-Free Judge Instructions
 
-> **Note to Judges:** No moderator permissions or external accounts are required. Attempt #1 records your official streak and community consensus vote, and **Replay This Shift** stays completely unlocked so you can test both winning and breach outcomes effortlessly.
+> **Note to Judges:** No moderator permissions or external accounts are required. Attempt #1 records your official streak and community consensus vote, **Replay This Shift** stays completely unlocked for testing both winning and breach outcomes, and **CASES X/9** / **Play Next Archive Shift →** lets you try all 9 cases and all 5 CCTV rooms in one sitting.
 
 1. Open the **Direct Playable Demo Post URL** above (works for standard non-moderator Reddit users).
 2. On the animated inline CCTV card, tap **▶ Play Today’s Shift** to enter the expanded terminal.
@@ -60,7 +62,8 @@ Every UTC day (`00:00 UTC` rollover), *Night Shift Daily* gives every Redditor t
 4. Tap numbered hotspots **`1`–`5`** on the CCTV monitor (or the 5 tabs / keys `1`–`5`) to inspect clues one at a time; tap **Flag Anomaly** on the single contradiction (or **Clear ✓** to cross off innocent clues).
 5. Under **02 // Containment Breakers**, arm protocol `A`, `B`, or `C` to stop the root cause.
 6. Tap **Execute Containment** to watch the animated canvas payoff and inspect your Rank stamp, Evidence & Containment audits, First-Shift Community Consensus, and live `NEXT SHIFT IN` countdown.
-7. Optionally tap **Post to Comments** (or **Copy Shift Card**) to test spoiler-free Reddit sharing, then tap **Replay This Shift** to explore an alternative outcome as a `PRACTICE REPLAY`.
+7. Optionally tap **Post to Comments** (or **Copy Shift Card**) to test spoiler-free Reddit sharing, or tap **Replay This Shift** to test an alternate outcome as a `PRACTICE REPLAY`.
+8. Tap **Play Next Archive Shift →** (or open **CASES X/9** in the top bar) to jump immediately into any of the other 8 cases and preview all 5 animated CCTV templates, then tap **TODAY** anytime to return to Today's Daily Shift.
 
 ---
 
